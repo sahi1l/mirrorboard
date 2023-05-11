@@ -1,0 +1,62 @@
+\documentclass{article}
+\input lastart.tex
+\begin{document}
+Suppose we have a set of lines with points $(x_i,y_i)$.  Then the best-line fit is
+\eqns{
+\eq r = \frac{N\sum_ix_iy_i - (\sum_ix_i)(\sum_iy_i)}{\sqrt{[N\sum x^2 - (\sum x)^2][N\sum y^2-(\sum y)^2]}}\\
+\eq b= r{\sg_y\over\sg_x}\\
+\eq a=\avg{y}-b\avg{x}\\
+}
+
+If we write $SX=\sum_ix_i$, $SY=\sum_iy_i$, $SXY=\sum_ix_iy_i$, $SXX = \sum_ix_i^2$, and $SYY = \sum_iy_i^2$, then 
+$$r = {N\times SXY - SX\times SY\over\sqrt{(N\times SXX - SX^2)(N\times SYY - SY^2)}}$$
+Also $\sg_x = \frc{N}\sqrt{N\times SXX - SX^2}$, ditto for $\sg_y$, and $\avg{x} = SX/N$.  Then we can rewrite
+$$r={NS_{XY} - S_X S_Y\over N^2\sg_x\sg_y}$$
+$$b = {NS_{XY} - S_X S_Y\over N^2\sg_x^2} = {NS_{XY}-S_XS_Y\over NS_{XX}-S_X^2}$$
+\eqns{
+\eq a = {S_Y\over N} - {NS_{XY}-S_XS_Y\over NS_{XX}-S_X^2}{S_X\over N}\\
+\eq = \frc{N}\[(NS_YS_{XX}-S_YS_X^2)-(NS_{XY}S_X - S_X^2S_Y)\over NS_{XX}-S_X^2\]\\
+\eq = {S_YS_{XX}-S_{XY}S_X\over NS_{XX}-S_X^2}\\
+}
+However, there is a problem if all the $x$'s or $y$'s are equal, because then the denominator of $r$ is zero.  Bleh.
+
+Let's parametrize the line instead using $p(x_0,y_0)+(1-p)(x_n,y_n)$.  Then the variance from this line is 
+$$V = \sum_i (x_i-(px_0 + (1-p)x_n))^2 + \sum_i (y_i - (px_0 + (1-p)x_n))^2$$
+Let's write $f_{x,i}(p) = (x_i - x_n) + p(x_n-x_0)$.  Then
+$$V = \sum_i f_{x,i}(p)^2 + f_{y,i}(p)^2$$
+We want
+\eqns{
+\eq 0 = \P<V/p> = \sum_i \P<f_{x,i}^2/p> + \P<f_{y,i}^2/p>\\
+\eq = 2\sum_i (f_{x,i}f'_{x,i} + f_{y,i}f'_{y,i})\\
+}
+Now $f'_x (p) = (x_n-x_0)$.  Thus $f_x(p)f'_x(p) = (x_n-x_0)(x_i-x_n+p(x_n-x_0)) = x_i(x_n-x_0) - x_n(x_n-x_0) + p(x_n-x_0)^2$.  
+\eqns{
+\eq 0 = (x_n-x_0)\sum_i x_i - N(-x_n(x_n-x_0)+p(x_n-x_0)^2)
++ (y_n-y_0)\sum_i y_i - N(-y_n(y_n-y_0)+p(y_n-y_0)^2)\\
+\eq = p[-(x_n-x_0)^2 - (y_n-y_0)^2] + (x_n-x_0)(\avg{x}-x_n) + (y_n-y_0)(\avg{y}-y_n)\\
+\ieq p = \frac{(x_n-x_0)(\avg{x}-x_n) + (y_n-y_0)(\avg{y}-y_n)}{(x_n-x_0)^2 + (y_n-y_0)^2}\\
+}
+
+
+
+No, let's try something different.  Suppose we parametrize
+$x_i = a_xt_i + b_x$ and $y_i = a_yt_i + b_y$.  Then if we write $T_1 = \sum_i t_i$ and $T_2 = \sum_i t_i^2$, 
+\eqns{
+\eq S_X = a_x T_1 + b_x N\\
+\eq S_Y = a_y T_1 + b_y N\\
+\eq S_{XX} = a_x^2 T_2 + 2a_xb_x T_1 + b_x^2 N\\
+\eq S_{YY} = a_y^2 T_2 + 2a_yb_y T_1 + b_y^2 N\\
+\eq S_{XY} = a_xa_y T_2 + (a_xb_y + a_yb_x) T_1 + b_xb_y N\\
+\eq NS_{XX}-S_X^2 = N(a_x^2 T_2 + 2a_xb_x T_1+b_x^2 N) - (a_x^2T_1^2 + 2a_xb_xNT_1 + b_x^2 N^2)\\
+\eq = Na_x^2(T_2-T_1^2)\\
+}
+Then the Pearson coefficient becomes
+\eqns{
+\eq r = {N\times SXY - SX\times SY\over\sqrt{(N\times SXX - SX^2)(N\times SYY - SY^2)}}\\
+\eq = \frac{N(a_xa_yT_2 + (a_xb_y+a_yb_x)T_1+b_xb_yN) - (a_xT_1+b_xN)(a_yT_1+b_yN)}{\sqrt{N^2a_x^2a_y^2(T_2-T_1^2)}}\\
+\eq = \frac{(Na_xa_yT_2 + N(a_xb_y+a_yb_x)T_1 + b_xb_yN^2) - (a_xa_yT_1^2 + (a_xb_y+a_yb_x)T_1N + b_xb_yN^2)}{Na_xa_y\sqrt{T_2-T_1^2}}\\
+\eq = \frac{a_xa_y(NT_2-T_1^2)}{Na_xa_y\sqrt{T_2-T_1^2}}\\
+\eq = {NT_2-T_1^2\over N\sqrt{T_2-T_1^2}}\\
+}
+and this is absolute codswollop because the $a$'s disappeared entirely, and it depends entirely on the parametrization.  Bah.
+\end{document}
