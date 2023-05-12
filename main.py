@@ -7,6 +7,27 @@ from tkinter import ttk
 from dotdict import dotdict
 from collections import OrderedDict
 
+def ifexists(val, defau):
+    if val:
+        return val
+    else:
+        return defau
+
+class Point:
+    x = 0
+    y = 0
+    def __init__(self,x,y):
+        self.x,self.y =x,y
+    def __add__(self,other):
+        return Point(self.x+other.x,self.y+other.y)
+    def __sub__(self,other):
+        return Point(self.x-other.x,self.y-other.y)
+    def list(self):
+        return [self.x,self.y]
+    def __str__(self,other):
+        return str((self.x,self.y))
+#================================================================================
+
 prefs = dotdict()
 prefs.aR = 11/8.5
 prefs.cX = 700
@@ -17,9 +38,6 @@ root.title("Whiteboard")
 
 #================================================================================
 get = lambda grp: palette.palette[grp].get()
-#================================================================================
-#Section PALETTES
-#--------------------------------------------------------------------------------
 #================================================================================
 class PaletteItem:
     items = []
@@ -105,11 +123,11 @@ class Width(PaletteItem):
 #================================================================================
 class Type(PaletteItem):
     parent = None #the palette
-    items = ["curve", "line", "rectangle", "oval"]
+    items = ["curve", "line", "rectangle", "oval","text"]
     default = "curve"
     template = {}
     def modify_buttons(self, root):
-        icons =  {"curve": "🖋", "line": "⟋", "rectangle": "▢", "oval":"◯"}
+        icons =  {"curve": "🖋", "line": "⟋", "rectangle": "▢", "oval":"◯","text":"A"}
         for name in self.items:
             widget = self.buttons[name]
             txt = tk.Label(widget, text = icons[name])
@@ -120,7 +138,7 @@ class Type(PaletteItem):
     def get(self,name=None):
         if not name:
             name = self.current
-        templates = {"curve": Curve, "line": Line, "rectangle": Rectangle, "oval": Oval}
+        templates = {"curve": Curve, "line": Line, "rectangle": Rectangle, "oval": Oval, "text": Text}
         return templates[name]
 #================================================================================
 class Palette:
@@ -133,24 +151,19 @@ class Palette:
     nav_buttons = []
     def __init__(self,parent,root):
         self.widget = tk.Frame(parent)
+        self.left = tk.Frame(self.widget)
+        self.right = tk.Frame(self.widget)
+        self.left.pack(side=tk.LEFT)
+        self.right.pack(side=tk.RIGHT)
+        print("a")
+        print(f"{self.palette=}")
         for key,val in self.palette.items():
             self.palette[key] = val(self.widget, root)
-
-palette = Palette(root,root)
-main = tk.Frame(root, width = prefs.cX, height = prefs.cY, background="cyan") #contains the canvas
-palette.widget.pack(side=tk.TOP, fill=tk.X)
-main.pack(side=tk.TOP, fill=tk.X)
+        print("b")
 
 #================================================================================
 #SECTION: Elements
 #--------------------------------------------------------------------------------
-#================================================================================
-def ifexists(val, defau):
-    if val:
-        return val
-    else:
-        return defau
-
 #================================================================================
 class Element: #generic class
     canvas = None #the canvas this element lives on
@@ -236,39 +249,42 @@ def sign(x):
     if x<0: return -1
     return 0
 class Shape(Element):
-    ul = [] #x,y of upper-left corner
-    lr = [] #x,y of lower-right corner
+    ul = None #x,y of upper-left corner
+    lr = None #x,y of lower-right corner
     color = None
     width = None
     def init(self, canvas, x, y, color=None, width=None, fill=None):
         self.canvas = canvas
         self.color = ifexists(color, get("color"))
         self.width = ifexists(width, get("width"))
-#        if self.color == "white":
-#            color = "grey"
-#        else:
-#            color = self.color
-#        self.obj = self.canvas.create_rectangle((x,y),(x,y), outline=color, width=self.width)
-        self.ul = [x,y]
-        self.lr = [x,y]
+        self.ul = Point(x,y)
+        self.lr = Point(x,y)
     def __init__(self,canvas,x,y,**args):
         self.init(self,canvas,x,y,**args)
     def update(self):
-        self.canvas.coords(self.obj, *(self.ul+self.lr))
+        self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
     def hide(self):
         self.canvas.coords(self.obj, 0,0,0,0)
     def lock(self,x,y):
-        dx = x - self.ul[0]
-        dy = y - self.ul[1]
-        if abs(dx)<abs(dy):
-            x = self.ul[0] + sign(dx)*abs(dy)
+        result = Point(x,y)
+        d = result - self.ul
+        if abs(d.x)<abs(d.y):
+            result.x = ul.x + sign(d.x)*abs(d.y)
         else:
-            y = self.ul[1] + sign(dy)*abs(dx)
-        return (x,y)
+            result.y = ul.y + sign(d.y)*abs(d.x)
+        return result
+#        dx = x - self.ul[0]
+#        dy = y - self.ul[1]
+#        if abs(dx)<abs(dy):
+#            x = self.ul[0] + sign(dx)*abs(dy)
+#        else:
+#            y = self.ul[1] + sign(dy)*abs(dx)
+#        return (x,y)
     def add(self,x,y, shift=False):
+        p = Point(x,y)
         if shift:
-            x,y = self.lock(x,y)
-        self.lr = [x,y]
+            p = self.lock(x,y)
+        self.lr = p
         self.update()
     def done(self):
         pass
@@ -284,16 +300,25 @@ class Line(Shape):
         self.obj = self.canvas.create_line(x,y,x,y,fill = self.color, width=self.width)
     def lock(self,x,y):
         tolerance = 2  /180
-        dx = x-self.ul[0]
-        dy = y-self.ul[1]
-        theta = math.atan2(dy,dx)/math.pi #ranges from -1 to 1
-        if abs(theta-0) < tolerance or abs(theta-1) < tolerance or abs(theta+1)<tolerance:
-            dy = 0
-        elif abs(theta-0.5) < tolerance or abs(theta + 0.5)< tolerance:
-            dx = 0
-        x = self.ul[0] + dx
-        y = self.ul[1] + dy
-        return x,y
+        P = Point(x,y)
+        d = P - self.ul
+        theta = math.atan2(d.y,d.x)/math.pi #ranges from -1 to 1
+        if abs(theta-0) < tolerance or abs(theta-1)<tolerance or abs(theta+1)<tolerance:
+            d.y = 0
+        elif abs(theta-0.5)<tolerance or abs(theta+0.5)<tolerance:
+            d.x = 0
+        P = self.ul + d
+        return P
+#        dx = x-self.ul.x
+#        dy = y-self.ul.y
+#        theta = math.atan2(dy,dx)/math.pi #ranges from -1 to 1
+#        if abs(theta-0) < tolerance or abs(theta-1) < tolerance or abs(theta+1)<tolerance:
+#            dy = 0
+#        elif abs(theta-0.5) < tolerance or abs(theta + 0.5)< tolerance:
+#            dx = 0
+#        x = self.ul[0] + dx
+#        y = self.ul[1] + dy
+#        return x,y
 
         
 class Oval(Shape):
@@ -302,7 +327,43 @@ class Oval(Shape):
         self.obj = self.canvas.create_oval(x,y,x,y,outline = self.color, width=self.width)
 #================================================================================
 class Text(Shape):
-    pass
+    font="monofur"
+    size=12
+    txtwidget = None
+    def __init__(self,canvas,x,y,**args):
+        self.init(canvas,x,y,**args)
+        self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=1)
+    def lock(self):
+        self.canvas.update()
+        
+        maxwidth = 0
+        maxheight = 0
+        line = 1
+        dum = 0
+        while d:=self.txtwidget.dlineinfo(f"{line}.0"):
+            
+            maxwidth = max(maxwidth,d[2])
+            line += 1
+            dum = d
+        if len(dum)<4:
+            print(f"{dum=}")
+        maxheight = dum[3]+dum[1]
+        print(f"{self.obj=},{maxheight=},{maxwidth=}")
+        self.canvas.itemconfigure(self.obj,height=maxheight+self.size, width=maxwidth+self.size)
+        print("done")
+    def done(self):
+        print("Running text done")
+        width,height = (self.lr - self.ul).list()
+#        width = self.lr[0]-self.ul[0]
+#        height = self.lr[1]-self.ul[1]
+        self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD)
+        self.canvas.delete(self.obj)
+        self.obj = self.canvas.create_window(*self.ul.list(),anchor=tk.NW, window=self.txtwidget, width=width, height=height)
+        self.canvas.focus(self.obj)
+        self.txtwidget.bind("<FocusOut>", lambda e:self.lock())
+        self.txtwidget.focus()
+        
+
 
 #================================================================================
 #SECTION: Main
@@ -334,6 +395,7 @@ class Page:
         self.canvas.grid_forget()
     def startMouse(self, e):
         print(f"{self.page=}")
+        self.parent.focus()
         pages.select(self.page)
         self.elements += [get("type")(self.canvas, e.x, e.y)]
     def dragMouse(self, e, shift=False):
@@ -393,10 +455,10 @@ class Pages:
         self.show(0)
         self.select(0)
 
-    def make_buttons(self, palette):
-        LB = tk.Button(palette, text="←", command=lambda: self.shift(-1))
-        RB = tk.Button(palette, text="→", command=lambda: self.shift(1))
-        NB = tk.Button(palette, text="+", command=lambda: self.new(True))
+    def make_buttons(self, left,right):
+        LB = tk.Button(left, text="←", command=lambda: self.shift(-1))
+        RB = tk.Button(right, text="→", command=lambda: self.shift(1))
+        NB = tk.Button(left, text="+", command=lambda: self.new(True))
         return (LB,RB,NB)
     def new(self,showQ=False):
         self.pages += [Page(main,len(self.pages))]
@@ -438,11 +500,17 @@ root.bind("<Command-z>", lambda e: pages.get().undo(e))
 root.bind("<Command-Z>", lambda e: pages.get().redo(e))
 
 #================================================================================
+main = tk.Frame(root, width = prefs.cX, height = prefs.cY, background="cyan") #contains the canvas
 pages = Pages(main)
-palette.nav_buttons = pages.make_buttons(palette.widget)
+palette = Palette(root,root)
+palette.nav_buttons = pages.make_buttons(palette.left, palette.left)
 palette.nav_buttons[0].pack(side=tk.LEFT)
 palette.nav_buttons[2].pack(side=tk.LEFT)
 palette.nav_buttons[1].pack(side=tk.RIGHT)
+
+palette.widget.pack(side=tk.TOP, fill=tk.X)
+main.pack(side=tk.BOTTOM, fill=tk.X)
+
 #================================================================================
 root.bind("<C>", pages.get().clear)
 root.mainloop()
