@@ -4,6 +4,7 @@ import numpy as np
 import math
 #from tkinter import *
 from tkinter import ttk
+from tkinter.font import Font
 from dotdict import dotdict
 from collections import OrderedDict
 
@@ -74,7 +75,6 @@ class PaletteItem:
         if item not in self.exclude:
             self.last = self.current
         self.current = item
-        print(item)
 #================================================================================
 class Color(PaletteItem):
     items = ["black", "red", "blue", "green", "yellow", "white"]
@@ -91,12 +91,8 @@ class Color(PaletteItem):
     
     def modify_buttons(self,root):
         key = 1
-        print("color: modify buttons", len(self.items))
-        print(self.buttons)
         for name in self.items:
-            print(name,self.get(name),self.buttons[name])
             self.buttons[name].configure(background=self.get(name))
-            print(self.buttons[name].configure("background"))
             root.bind(f"<Key-{key}>", lambda e, name=name: self.select(name))
         
     def get(self,name=None):
@@ -108,7 +104,6 @@ class Width(PaletteItem):
     items = [1,2,4,6,8]
     default = 1
     def modify_buttons(self,root):
-        print("width: modify_buttons", len(self.items))
         for name in self.items:
             self.buttons[name].configure(borderwidth=name, width=20, height=20, padx=2)
             
@@ -123,11 +118,12 @@ class Width(PaletteItem):
 #================================================================================
 class Type(PaletteItem):
     parent = None #the palette
-    items = ["curve", "line", "rectangle", "oval","text"]
+    items = ["curve", "line", "rectangle", "oval", "text", "select"]
     default = "curve"
+    exclude = ["text"]
     template = {}
     def modify_buttons(self, root):
-        icons =  {"curve": "🖋", "line": "⟋", "rectangle": "▢", "oval":"◯","text":"A"}
+        icons =  {"curve": "🖋", "line": "⟋", "rectangle": "▢", "oval":"◯","text":"A","select": "✢"}
         for name in self.items:
             widget = self.buttons[name]
             txt = tk.Label(widget, text = icons[name])
@@ -138,7 +134,7 @@ class Type(PaletteItem):
     def get(self,name=None):
         if not name:
             name = self.current
-        templates = {"curve": Curve, "line": Line, "rectangle": Rectangle, "oval": Oval, "text": Text}
+        templates = {"curve": Curve, "line": Line, "rectangle": Rectangle, "oval": Oval, "text": Text, "select": Select}
         return templates[name]
 #================================================================================
 class Palette:
@@ -155,11 +151,8 @@ class Palette:
         self.right = tk.Frame(self.widget)
         self.left.pack(side=tk.LEFT)
         self.right.pack(side=tk.RIGHT)
-        print("a")
-        print(f"{self.palette=}")
         for key,val in self.palette.items():
             self.palette[key] = val(self.widget, root)
-        print("b")
 
 #================================================================================
 #SECTION: Elements
@@ -171,7 +164,7 @@ class Element: #generic class
     def init(self, canvas):
         self.canvas = canvas
     def __init__(self, canvas):
-        init(canvas)
+        self.init(canvas)
     def add(self, x, y, shift=False): pass
     def done(self): pass
     def hide(self): pass #hide the graphic
@@ -179,12 +172,29 @@ class Element: #generic class
     def __del__(self):
         if self.obj:
             self.canvas.delete(self.obj)
+#================================================================================
+class Change(Element): #instructs an element to change certain things
+    delete = False #if true, the object has been deleted
+    color = None #or a 2-ple with the original and the new color
+    width = None #or a 2-ple with the original and the new width
+    text = None #or a 2-ple with the original and new text (and font eventually?)
+    move = None #or a 2-ple of two points, original ul and new ul
+    def __init__(self,canvas,obj):
+        self.init(canvas)
+        self.obj = obj
+    def hide(self):
+        #change the elements on object to the old settings
+        pass
+    def update(self):
+        #change the elements on object to the new settings
+        pass
 #================================================================================    
 class Curve(Element):
     points = []
     color = None
     width = None
     cursor = None
+    ul = None #location of the first point
     def __init__(self, canvas, x, y, color=None, width=None):
         self.init(canvas)
         self.color = ifexists(color, get("color"))
@@ -193,13 +203,16 @@ class Curve(Element):
         self.cursor = self.canvas.create_oval(*self.center(x,y,self.width), fill="", outline="black") #*2
         self.canvas.lift(self.cursor)
         self.points = [(x,y)]
+        self.ul = Point(x,y)
     def center(self,x,y,w):
         return [x-w/2,y-w/2,x+w/2,y+w/2]
     def update(self):
         pts = [i for sub in self.points for i in sub]
         self.canvas.coords(self.obj, *pts)
     def hide(self):
-        self.canvas.coords(self.obj, 0,0,0,0)
+        self.canvas.moveto(self.obj,-10000,-10000)
+#        self.canvas.moveto(self.obj, *(self.points[0]))
+#        self.canvas.coords(self.obj, 0,0,0,0)
     def add(self, x, y, shift=False):
         self.points += [(x,y)]
         self.update()
@@ -217,6 +230,7 @@ class Curve(Element):
                 a[i] = avg
                 b[i] = avg
         self.points = [tuple(a), tuple(b)]
+        self.ul = Point(*a)
         self.update()
     def done(self):
         #CHECK IF IT IS A STRAIGHT LINE
@@ -225,24 +239,6 @@ class Curve(Element):
             self.cursor = None
         return #replace with straighten line
                            
-                           
-        X = [i[0] for i in self.points]
-        Y = [i[1] for i in self.points]
-        r = np.corrcoef(X,Y)[0][1]
-        if abs(r)>0.95:
-            a = list(self.points[0])
-            b = list(self.points[-1])
-            tolerance = 50
-            T = 1000
-            for i in [0,1]:
-                #if it is almost horizontal or vertical, make it perfect
-                T = min(T,abs(a[i]-b[i]))
-                if abs(a[i]-b[i]) < tolerance:
-                    avg = (a[i]+b[i])/2
-                    a[i] = avg
-                    b[i] = avg
-            self.points = [tuple(a), tuple(b)]
-            self.update()
 #================================================================================
 def sign(x):
     if x>0: return 1
@@ -327,43 +323,51 @@ class Oval(Shape):
         self.obj = self.canvas.create_oval(x,y,x,y,outline = self.color, width=self.width)
 #================================================================================
 class Text(Shape):
-    font="monofur"
-    size=12
+    font = None
+    family="monofur"
+    size=18
     txtwidget = None
+    text = ""
+    locked = False
     def __init__(self,canvas,x,y,**args):
         self.init(canvas,x,y,**args)
         self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=1)
+        self.font = Font(family=self.family, size=self.size)
     def lock(self):
+        self.locked = True
         self.canvas.update()
-        
-        maxwidth = 0
-        maxheight = 0
-        line = 1
-        dum = 0
-        while d:=self.txtwidget.dlineinfo(f"{line}.0"):
-            
-            maxwidth = max(maxwidth,d[2])
-            line += 1
-            dum = d
-        if len(dum)<4:
-            print(f"{dum=}")
-        maxheight = dum[3]+dum[1]
-        print(f"{self.obj=},{maxheight=},{maxwidth=}")
-        self.canvas.itemconfigure(self.obj,height=maxheight+self.size, width=maxwidth+self.size)
-        print("done")
+        text = self.txtwidget.get('1.0','end')
+        self.canvas.delete(self.obj)
+        self.txtwidget.destroy()
+        self.obj = self.canvas.create_text(*self.ul.list(), text=text, anchor=tk.NW,font=self.font)
+        palette.palette["type"].select(palette.palette["type"].last)
+    
+    def hide(self):
+        self.canvas.moveto(self.obj,-100,-100)
+    def update(self):
+        if not self.locked and not self.txtwidget:
+            self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
+        else:
+            self.canvas.moveto(self.obj,self.ul.x,self.ul.y)
+#        if self.locked:
+#            self.canvas.coords(self.obj,*(self.ul.list()))
+#        else:
+#            self.canvas.coords(self.obj,*(self.ul.list()+self.lr.list()))
     def done(self):
-        print("Running text done")
         width,height = (self.lr - self.ul).list()
 #        width = self.lr[0]-self.ul[0]
 #        height = self.lr[1]-self.ul[1]
-        self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD)
+        self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD,font=self.font)
         self.canvas.delete(self.obj)
-        self.obj = self.canvas.create_window(*self.ul.list(),anchor=tk.NW, window=self.txtwidget, width=width, height=height)
+        self.obj = self.canvas.create_window(self.ul.x-5,self.ul.y-5,anchor=tk.NW, window=self.txtwidget, width=width, height=height)
         self.canvas.focus(self.obj)
         self.txtwidget.bind("<FocusOut>", lambda e:self.lock())
         self.txtwidget.focus()
-        
-
+#================================================================================
+class Select(Element):
+    def __init__(self,parent,root=None):
+        pass
+    
 
 #================================================================================
 #SECTION: Main
@@ -372,9 +376,10 @@ class Text(Shape):
 class Page:
     parent = None #the parent widget
     canvas = None #widget containing the canvas
-    elements = [] #list of elements
+    elements = [] #list of elements. Question: do these match up with canvas numbers?
     undone = [] #list of elements that have been undone
     page = None
+    chosen = None
     def __init__(self, parent, page=1):
         self.parent = parent
         self.page = page
@@ -384,32 +389,58 @@ class Page:
         self.canvas.bind("<Shift-B1-Motion>",lambda e,shift=True: self.dragMouse(e,shift))
         self.canvas.bind("<Shift-1>", self.dragMouse)
         self.canvas.bind("<ButtonRelease-1>", self.doneMouse)
+    def selectQ(self):
+        #true if in select mode
+#        print(palette.palette["type"].current)
+        return (palette.palette["type"].current == "select")
     def poke(self):
         self.canvas.update()
 #        obj = self.canvas.create_line(0,0,0,0)
 #        self.canvas.delete(obj)
-#        print("poking")
+    def selected(self):
+        if self.chosen:
+            return self.chosen
+        if not self.elements: return None
+        return self.elements[-1]
     def show(self,col=0):
         self.canvas.grid(row=1,column=col)
     def forget(self):
         self.canvas.grid_forget()
     def startMouse(self, e):
-        print(f"{self.page=}")
-        self.parent.focus()
-        pages.select(self.page)
-        self.elements += [get("type")(self.canvas, e.x, e.y)]
+        if self.selectQ():
+            d = 5
+            obj = self.canvas.find_overlapping(e.x-d,e.y-d,e.x+d,e.y+d)
+            print(f"{obj=}")
+            if obj:
+                self.chosen = Change(obj) 
+                self.elements += [self.chosen]
+            pass
+        else:
+            self.chosen = None
+            self.parent.focus()
+            pages.select(self.page)
+            self.elements += [get("type")(self.canvas, e.x, e.y)]
     def dragMouse(self, e, shift=False):
-        if not self.elements: return
-        last = self.elements[-1]
-        if not last: return
-        last.add(e.x,e.y,shift)
+        if self.selectQ():
+            if self.chosen:
+                
+                pass
+        else:
+            self.chosen = None
+            if not self.elements: return
+            last = self.elements[-1]
+            if not last: return
+            last.add(e.x,e.y,shift)
 #        if isinstance(last,Curve): #ALT: all these objects have .add and .done so I don't need to check
 #            last.add(e.x,e.y)
     def doneMouse(self, e):
-        if not self.elements: return
-        last = self.elements[-1]
-        if last:
-            last.done()
+        if self.selectQ():
+            pass
+        else:
+            self.chosen=None
+            if not (last:= self.selected()): return
+            if last:
+                last.done()
     def straighten(self, e):
         """might work for other shapes too"""
         if isinstance(self.elements[-1], Curve):
@@ -419,12 +450,10 @@ class Page:
             item = self.elements.pop()
             del item
     def undo(self,e):
-        print(f"undo: {self.page}")
         if self.elements:
             self.elements[-1].hide()
             self.undone += [self.elements.pop(-1)]
     def redo(self,e):
-        print(f"redo: {self.page}")
         if self.undone:
             self.elements += [self.undone.pop(-1)]
             self.elements[-1].update()
@@ -488,7 +517,6 @@ class Pages:
             self.pages[self.curpage+pg].poke()
 
     def get(self):
-        print(f"{self.selected=}")
         return self.pages[self.selected]
     def shift(self, dn):
         N = len(self.pages)-1
