@@ -2,10 +2,8 @@
 import tkinter as tk
 import numpy as np
 import math
-#from tkinter import *
 from tkinter import ttk
 from tkinter.font import Font
-from dotdict import dotdict
 from collections import OrderedDict
 
 def ifexists(val, defau):
@@ -29,10 +27,6 @@ class Point:
         return str((self.x,self.y))
 #================================================================================
 
-prefs = dotdict()
-prefs.aR = 11/8.5
-prefs.cX = 700
-prefs.cY = prefs.cX * prefs.aR
 
 root = tk.Tk()
 root.title("Whiteboard")
@@ -144,8 +138,8 @@ class Palette:
         "width": Width,
         "type": Type,
         }
-    nav_buttons = []
-    def __init__(self,parent,root):
+    navs = []
+    def __init__(self,parent,root,pages):
         self.widget = tk.Frame(parent)
         self.left = tk.Frame(self.widget)
         self.right = tk.Frame(self.widget)
@@ -153,6 +147,10 @@ class Palette:
         self.right.pack(side=tk.RIGHT)
         for key,val in self.palette.items():
             self.palette[key] = val(self.widget, root)
+        self.navs = pages.make_buttons(self.left, self.left)
+        self.navs["back"].pack(side = tk.LEFT)
+        self.navs["new"].pack(side = tk.LEFT)
+        self.navs["forward"].pack(side = tk.RIGHT)
 
 #================================================================================
 #SECTION: Elements
@@ -383,20 +381,16 @@ class Page:
     def __init__(self, parent, page=1):
         self.parent = parent
         self.page = page
-        self.canvas = tk.Canvas(parent, width=prefs.cX, height = prefs.cY, background="white")
+        self.canvas = tk.Canvas(parent, width=pages.cX, height = pages.cY, background="white")
         self.canvas.bind("<1>", self.startMouse)
         self.canvas.bind("<B1-Motion>", self.dragMouse)
         self.canvas.bind("<Shift-B1-Motion>",lambda e,shift=True: self.dragMouse(e,shift))
         self.canvas.bind("<Shift-1>", self.dragMouse)
         self.canvas.bind("<ButtonRelease-1>", self.doneMouse)
-    def selectQ(self):
-        #true if in select mode
-#        print(palette.palette["type"].current)
+    def selectQ(self): #true if in select mode
         return (palette.palette["type"].current == "select")
     def poke(self):
         self.canvas.update()
-#        obj = self.canvas.create_line(0,0,0,0)
-#        self.canvas.delete(obj)
     def selected(self):
         if self.chosen:
             return self.chosen
@@ -465,6 +459,9 @@ class Page:
             del x
 #================================================================================
 class Pages:
+    aR = 11/8.5
+    cX = 700 #width of each page
+    cY = 906 #cX*aR
     curpage = 0
     selected = 0 #page that is selected, might be different from curpage
     #FIX: I need to implement this selected business!
@@ -488,9 +485,9 @@ class Pages:
         LB = tk.Button(left, text="←", command=lambda: self.shift(-1))
         RB = tk.Button(right, text="→", command=lambda: self.shift(1))
         NB = tk.Button(left, text="+", command=lambda: self.new(True))
-        return (LB,RB,NB)
+        return {"back":LB, "forward":RB, "new": NB}
     def new(self,showQ=False):
-        self.pages += [Page(main,len(self.pages))]
+        self.pages += [Page(main,self,len(self.pages))]
         if showQ:
             self.show(len(self.pages)-1)
     def select(self, num):
@@ -528,14 +525,10 @@ root.bind("<Command-z>", lambda e: pages.get().undo(e))
 root.bind("<Command-Z>", lambda e: pages.get().redo(e))
 
 #================================================================================
-main = tk.Frame(root, width = prefs.cX, height = prefs.cY, background="cyan") #contains the canvas
+main = tk.Frame(root, background="cyan") #contains the canvas
 pages = Pages(main)
-palette = Palette(root,root)
-palette.nav_buttons = pages.make_buttons(palette.left, palette.left)
-palette.nav_buttons[0].pack(side=tk.LEFT)
-palette.nav_buttons[2].pack(side=tk.LEFT)
-palette.nav_buttons[1].pack(side=tk.RIGHT)
-
+main.configure(width = pages.cX*2, height = pages.cY)
+palette = Palette(root,root,pages)
 palette.widget.pack(side=tk.TOP, fill=tk.X)
 main.pack(side=tk.BOTTOM, fill=tk.X)
 
