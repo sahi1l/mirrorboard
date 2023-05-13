@@ -6,6 +6,7 @@ from tkinter import ttk
 from tkinter.font import Font
 from collections import OrderedDict
 
+limbo = -10000
 def ifexists(val, defau):
     if val:
         return val
@@ -96,6 +97,7 @@ class Color(PaletteItem):
 #================================================================================
 class Width(PaletteItem):
     items = [1,2,4,6,8]
+    fontbase = 8 #font size is fontbase + width
     default = 1
     def modify_buttons(self,root):
         for name in self.items:
@@ -158,11 +160,18 @@ class Palette:
 #================================================================================
 class Element: #generic class
     canvas = None #the canvas this element lives on
+    mirror = None
+    scale = None
     obj = None #the ID (number) of the object
-    def init(self, canvas):
-        self.canvas = canvas
-    def __init__(self, canvas):
-        self.init(canvas)
+    mobj = None #the ID (number) of the object on the mirror
+    def init(self, page):
+        self.canvas = page.canvas
+        self.mirror = page.mirror
+        self.scale = page.scale
+    def __init__(self, page):
+        self.init(page)
+    def scale_mirror(self):
+        self.mirror.scale(self.mobj, 0,0, self.scale,self.scale)
     def add(self, x, y, shift=False): pass
     def done(self): pass
     def hide(self): pass #hide the graphic
@@ -170,6 +179,7 @@ class Element: #generic class
     def __del__(self):
         if self.obj:
             self.canvas.delete(self.obj)
+            self.mirror.delete(self.mobj)
 #================================================================================
 class Change(Element): #instructs an element to change certain things
     delete = False #if true, the object has been deleted
@@ -177,9 +187,10 @@ class Change(Element): #instructs an element to change certain things
     width = None #or a 2-ple with the original and the new width
     text = None #or a 2-ple with the original and new text (and font eventually?)
     move = None #or a 2-ple of two points, original ul and new ul
-    def __init__(self,canvas,obj):
-        self.init(canvas)
+    def __init__(self,page,obj,mobj):
+        self.init(page)
         self.obj = obj
+        self.mobj = mobj
     def hide(self):
         #change the elements on object to the old settings
         pass
@@ -193,11 +204,14 @@ class Curve(Element):
     width = None
     cursor = None
     ul = None #location of the first point
-    def __init__(self, canvas, x, y, color=None, width=None):
-        self.init(canvas)
+    def __init__(self, page, x, y, color=None, width=None):
+        self.init(page)
         self.color = ifexists(color, get("color"))
         self.width = ifexists(width, get("width"))
         self.obj = self.canvas.create_line((x,y),(x,y), fill=self.color, width=self.width)
+        self.mobj = self.mirror.create_line((x,y),(x,y), fill=self.color, width=self.width)
+        self.scale_mirror()
+        self.mirror.scale(self.mobj,0,0,self.scale,self.scale)
         self.cursor = self.canvas.create_oval(*self.center(x,y,self.width), fill="", outline="black") #*2
         self.canvas.lift(self.cursor)
         self.points = [(x,y)]
@@ -207,8 +221,11 @@ class Curve(Element):
     def update(self):
         pts = [i for sub in self.points for i in sub]
         self.canvas.coords(self.obj, *pts)
+        self.mirror.coords(self.mobj, *pts)
+        self.scale_mirror()
     def hide(self):
-        self.canvas.moveto(self.obj,-10000,-10000)
+        self.canvas.moveto(self.obj,limbo,limbo)
+        self.mirror.moveto(self.mobj,limbo,limbo)
 #        self.canvas.moveto(self.obj, *(self.points[0]))
 #        self.canvas.coords(self.obj, 0,0,0,0)
     def add(self, x, y, shift=False):
@@ -231,11 +248,10 @@ class Curve(Element):
         self.ul = Point(*a)
         self.update()
     def done(self):
-        #CHECK IF IT IS A STRAIGHT LINE
         if self.cursor:
             self.canvas.delete(self.cursor)
             self.cursor = None
-        return #replace with straighten line
+        return 
                            
 #================================================================================
 def sign(x):
@@ -247,8 +263,10 @@ class Shape(Element):
     lr = None #x,y of lower-right corner
     color = None
     width = None
-    def init(self, canvas, x, y, color=None, width=None, fill=None):
-        self.canvas = canvas
+    def init(self, page, x, y, color=None, width=None, fill=None):
+        self.canvas = page.canvas
+        self.mirror = page.mirror
+        self.scale = page.scale
         self.color = ifexists(color, get("color"))
         self.width = ifexists(width, get("width"))
         self.ul = Point(x,y)
@@ -257,8 +275,12 @@ class Shape(Element):
         self.init(self,canvas,x,y,**args)
     def update(self):
         self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
+        self.mirror.coords(self.mobj, *(self.ul.list()+self.lr.list()))
+        self.scale_mirror()
     def hide(self):
-        self.canvas.coords(self.obj, 0,0,0,0)
+#        self.canvas.coords(self.obj, 0,0,0,0)
+        self.canvas.moveto(self.obj,-10000,-10000)
+        self.mirror.moveto(self.mobj,-10000,-10000)
     def lock(self,x,y):
         result = Point(x,y)
         d = result - self.ul
@@ -267,13 +289,6 @@ class Shape(Element):
         else:
             result.y = ul.y + sign(d.y)*abs(d.x)
         return result
-#        dx = x - self.ul[0]
-#        dy = y - self.ul[1]
-#        if abs(dx)<abs(dy):
-#            x = self.ul[0] + sign(dx)*abs(dy)
-#        else:
-#            y = self.ul[1] + sign(dy)*abs(dx)
-#        return (x,y)
     def add(self,x,y, shift=False):
         p = Point(x,y)
         if shift:
@@ -282,16 +297,19 @@ class Shape(Element):
         self.update()
     def done(self):
         pass
-#        self.canvas.itemconfigure(self.obj,outline=self.color) 
 #FIX: allow for constrained motion!
 class Rectangle(Shape):
     def __init__(self,canvas,x,y,**args):
         self.init(canvas,x,y,**args)
         self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=self.width)
+        self.mobj = self.mirror.create_rectangle(x,y,x,y,outline = self.color, width=self.width)
+        self.scale_mirror()
 class Line(Shape):
     def __init__(self,canvas,x,y,**args):
         self.init(canvas,x,y,**args)
         self.obj = self.canvas.create_line(x,y,x,y,fill = self.color, width=self.width)
+        self.mobj = self.mirror.create_line(x,y,x,y,fill = self.color, width=self.width)
+        self.scale_mirror()
     def lock(self,x,y):
         tolerance = 2  /180
         P = Point(x,y)
@@ -303,58 +321,55 @@ class Line(Shape):
             d.x = 0
         P = self.ul + d
         return P
-#        dx = x-self.ul.x
-#        dy = y-self.ul.y
-#        theta = math.atan2(dy,dx)/math.pi #ranges from -1 to 1
-#        if abs(theta-0) < tolerance or abs(theta-1) < tolerance or abs(theta+1)<tolerance:
-#            dy = 0
-#        elif abs(theta-0.5) < tolerance or abs(theta + 0.5)< tolerance:
-#            dx = 0
-#        x = self.ul[0] + dx
-#        y = self.ul[1] + dy
-#        return x,y
-
         
 class Oval(Shape):
     def __init__(self,canvas,x,y,**args):
         self.init(canvas,x,y,**args)
         self.obj = self.canvas.create_oval(x,y,x,y,outline = self.color, width=self.width)
+        self.mobj = self.mirror.create_oval(x,y,x,y,outline = self.color, width=self.width)
+        self.scale_mirror()
 #================================================================================
 class Text(Shape):
     font = None
+    mfont = None
     family="monofur"
     size=18
     txtwidget = None
     text = ""
     locked = False
-    def __init__(self,canvas,x,y,**args):
-        self.init(canvas,x,y,**args)
+    def __init__(self,page,x,y,**args):
+        self.init(page,x,y,**args)
         self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=1)
         self.font = Font(family=self.family, size=self.size)
+        self.mfont = Font(family=self.family, size=int(self.size*self.scale))
     def lock(self):
         self.locked = True
         self.canvas.update()
         text = self.txtwidget.get('1.0','end')
         self.canvas.delete(self.obj)
         self.txtwidget.destroy()
+        self.mfont.size = int(self.size*self.scale)
         self.obj = self.canvas.create_text(*self.ul.list(), text=text, anchor=tk.NW,font=self.font)
+        self.mobj = self.mirror.create_text(*self.ul.list(), text=text, anchor=tk.NW,font=self.mfont)
+        self.scale_mirror()
+        
+        #FIX: change font size?
         palette.palette["type"].select(palette.palette["type"].last)
     
     def hide(self):
-        self.canvas.moveto(self.obj,-100,-100)
+        self.canvas.moveto(self.obj,-10000,-10000)
+        self.mirror.moveto(self.mobj,-10000,-10000)
     def update(self):
         if not self.locked and not self.txtwidget:
             self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
         else:
             self.canvas.moveto(self.obj,self.ul.x,self.ul.y)
-#        if self.locked:
-#            self.canvas.coords(self.obj,*(self.ul.list()))
-#        else:
-#            self.canvas.coords(self.obj,*(self.ul.list()+self.lr.list()))
+            self.mirror.moveto(self.mobj,self.ul.x,self.ul.y)
+            self.scale_mirror()
+            self.mfont.size = int(self.size*self.scale)
+            #FIX: change font size?
     def done(self):
         width,height = (self.lr - self.ul).list()
-#        width = self.lr[0]-self.ul[0]
-#        height = self.lr[1]-self.ul[1]
         self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD,font=self.font)
         self.canvas.delete(self.obj)
         self.obj = self.canvas.create_window(self.ul.x-5,self.ul.y-5,anchor=tk.NW, window=self.txtwidget, width=width, height=height)
@@ -378,10 +393,19 @@ class Page:
     undone = [] #list of elements that have been undone
     page = None
     chosen = None
-    def __init__(self, parent, page=1):
+    mchosen = None
+    mRoot = None #window where the mirror resides
+    mirror = None #the mirrored canvas
+    scale = 0.5 #the scale of the mirror
+    def __init__(self, parent, pages, page, mirror):
         self.parent = parent
         self.page = page
+        self.mRoot = mirror
         self.canvas = tk.Canvas(parent, width=pages.cX, height = pages.cY, background="white")
+        self.mirror = tk.Canvas(self.mRoot,
+                                    width=pages.cX*self.scale,
+                                    height = pages.cY*self.scale,
+                                    background="white")
         self.canvas.bind("<1>", self.startMouse)
         self.canvas.bind("<B1-Motion>", self.dragMouse)
         self.canvas.bind("<Shift-B1-Motion>",lambda e,shift=True: self.dragMouse(e,shift))
@@ -391,6 +415,7 @@ class Page:
         return (palette.palette["type"].current == "select")
     def poke(self):
         self.canvas.update()
+        self.mirror.update()
     def selected(self):
         if self.chosen:
             return self.chosen
@@ -398,6 +423,7 @@ class Page:
         return self.elements[-1]
     def show(self,col=0):
         self.canvas.grid(row=1,column=col)
+        self.mirror.grid(row=0,column=col)
     def forget(self):
         self.canvas.grid_forget()
     def startMouse(self, e):
@@ -406,18 +432,18 @@ class Page:
             obj = self.canvas.find_overlapping(e.x-d,e.y-d,e.x+d,e.y+d)
             print(f"{obj=}")
             if obj:
-                self.chosen = Change(obj) 
+                self.chosen = Change(obj)
+                self.mchosen = Change(obj)
                 self.elements += [self.chosen]
             pass
         else:
             self.chosen = None
             self.parent.focus()
             pages.select(self.page)
-            self.elements += [get("type")(self.canvas, e.x, e.y)]
+            self.elements += [get("type")(self, e.x, e.y)]
     def dragMouse(self, e, shift=False):
         if self.selectQ():
             if self.chosen:
-                
                 pass
         else:
             self.chosen = None
@@ -433,8 +459,7 @@ class Page:
         else:
             self.chosen=None
             if not (last:= self.selected()): return
-            if last:
-                last.done()
+            if last: last.done()
     def straighten(self, e):
         """might work for other shapes too"""
         if isinstance(self.elements[-1], Curve):
@@ -469,10 +494,13 @@ class Pages:
     parent = None
     nums = [] #list of numbers
     Ncols = 2
-    def __init__(self,parent):
+    mirror = None #widget for the mirror topwindow
+    def __init__(self,parent): #parent is what we call "main"
         self.parent = parent
         self.parent.rowconfigure(0)
         self.parent.columnconfigure(1)
+        self.mirror = tk.Toplevel(root)
+        self.mirror.title("*MIRROR*")
         for pg in range(0,self.Ncols):
             self.nums += [tk.Label(parent, text="", background="grey")]
             self.nums[-1].bind("<1>", lambda e,d=pg:self.select(self.curpage+d))
@@ -487,7 +515,7 @@ class Pages:
         NB = tk.Button(left, text="+", command=lambda: self.new(True))
         return {"back":LB, "forward":RB, "new": NB}
     def new(self,showQ=False):
-        self.pages += [Page(main,self,len(self.pages))]
+        self.pages += [Page(main,self,len(self.pages), self.mirror)]
         if showQ:
             self.show(len(self.pages)-1)
     def select(self, num):
@@ -510,7 +538,6 @@ class Pages:
         for pg in range(0,self.Ncols):
             self.nums[pg].config(text=str(self.curpage+pg+1))
             self.pages[self.curpage+pg].show(pg)
-#        for pg in range(0,self.Ncols):
             self.pages[self.curpage+pg].poke()
 
     def get(self):
