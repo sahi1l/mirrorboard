@@ -5,6 +5,7 @@ import math
 from tkinter import ttk
 from tkinter.font import Font
 from collections import OrderedDict
+from screeninfo import get_monitors
 
 limbo = -10000
 def ifexists(val, defau):
@@ -396,16 +397,18 @@ class Page:
     mchosen = None
     mRoot = None #window where the mirror resides
     mirror = None #the mirrored canvas
-    scale = 0.5 #the scale of the mirror
+    scale = 1 #the scale of the mirror
     def __init__(self, parent, pages, page, mirror):
         self.parent = parent
         self.page = page
+        self.scale = pages.scale
         self.mRoot = mirror
         self.canvas = tk.Canvas(parent, width=pages.cX, height = pages.cY, background="white")
         self.mirror = tk.Canvas(self.mRoot,
                                     width=pages.cX*self.scale,
-                                    height = pages.cY*self.scale,
+                                    height=pages.cY*self.scale,
                                     background="white")
+        print(f"Page mirror: {self.scale, pages.cX*self.scale, pages.cY*self.scale}")
         self.canvas.bind("<1>", self.startMouse)
         self.canvas.bind("<B1-Motion>", self.dragMouse)
         self.canvas.bind("<Shift-B1-Motion>",lambda e,shift=True: self.dragMouse(e,shift))
@@ -501,6 +504,7 @@ class Pages:
         self.parent.columnconfigure(1)
         self.mirror = tk.Toplevel(root)
         self.mirror.title("*MIRROR*")
+        self.show_mirror(False)
         for pg in range(0,self.Ncols):
             self.nums += [tk.Label(parent, text="", background="grey")]
             self.nums[-1].bind("<1>", lambda e,d=pg:self.select(self.curpage+d))
@@ -508,6 +512,23 @@ class Pages:
             self.new()
         self.show(0)
         self.select(0)
+
+    def show_mirror(self,force=False):
+        monitors = get_monitors()
+        print(monitors)
+        if len(monitors)>1 or force:
+            M = monitors[1]
+            self.mirror.deiconify()
+            print(f"{M.width=},{2*self.cX=}", f"{M.height=},{self.cY=}")
+            nscaleW = M.width/(2*self.cX)
+            nscaleH = M.height/self.cY
+            self.scale = min(nscaleW,nscaleH)
+            geometry = f"{int(self.scale*2*self.cX)}x{int(self.scale*2*self.cY)}+{M.x}+{M.y}"
+            print(f"{nscaleW=}\n{nscaleH=}\n{geometry=}")
+            self.mirror.geometry(geometry)
+        else:
+            self.mirror.withdraw()
+        
 
     def make_buttons(self, left,right):
         LB = tk.Button(left, text="←", command=lambda: self.shift(-1))
