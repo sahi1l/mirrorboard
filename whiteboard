@@ -46,23 +46,52 @@ class PaletteItem:
     default = None
     last = None
     container = None
+    icon = None
+    icontext = ""
+    openQ = True
     def __init__(self,parent,root=None):
         self.buttons = {}
         self.parent = parent
         self.container = tk.Frame(parent)
         self.container.pack(side=tk.LEFT, padx=3)
+        self.icon = tk.Label(self.container,
+                                 text=self.icontext,
+                                 bg="grey",
+                                 fg="white",
+                                 font=("Times-Bold",14)
+                                 ) #Need to flavor this for each palette
+        self.icon.pack(side=tk.LEFT)
+        self.icon.bind("<1>",lambda e:self.toggle())
         for name in self.items:
             self.buttons[name] = tk.Frame(self.container, borderwidth=4, background="grey", width=30, height=30, relief="raised")
-            self.buttons[name].pack(side=tk.LEFT)
+#            self.buttons[name].pack(side=tk.LEFT)
             self.buttons[name].bind("<1>", lambda e,name=name: self.select(name))
         self.current = self.default
         self.modify_buttons(root)
         self.select(self.default)
+        self.reveal()
+    def toggle(self):
+        self.openQ = not self.openQ
+        if self.openQ: self.reveal()
+        else: self.hide()
+    def reveal(self):
+        #IDEA: hide all others before I do this one
+#        self.icon.pack_forget()
+        for name in self.items:
+            self.buttons[name].pack(side=tk.LEFT)
+        self.container.update()
+    def hide(self):
+        for name in self.items:
+            self.buttons[name].pack_forget()
+#        self.icon.pack(side=tk.LEFT)
     def get(self,name=None):
         if not name:
             name = self.current
         return name
     def highlight(self,widget,onQ): #highlight the button in some way, like turn it white instead of black
+        pass
+    def icon_select(self,item):
+        #special effect for the icon itself
         pass
     def select(self,item):
         for name,widget in self.buttons.items():
@@ -71,6 +100,7 @@ class PaletteItem:
             else:
                 widget.config(relief="raised")
             self.highlight(widget, name==item)
+        self.icon_select(item)
         if item not in self.exclude:
             self.last = self.current
         self.current = item
@@ -87,7 +117,7 @@ class Color(PaletteItem):
     ])
     default = "black"
     exclude = ["white"]
-    
+    icontext = "C"
     def modify_buttons(self,root):
         key = 1
         for name in self.items:
@@ -98,11 +128,18 @@ class Color(PaletteItem):
         if not name:
             name = self.current
         return self.colors[name]
+
+    def icon_select(self,item):
+        if item=="black":
+            self.icon.configure(bg="black", fg="white")
+        else:
+            self.icon.configure(bg=self.colors[item], fg="black")
 #================================================================================
 class Width(PaletteItem):
     items = [1,2,4,6,8]
 #    fontbase = 8 #font size is fontbase + width
     default = 2
+    icontext = "W"
     def modify_buttons(self,root):
         for name in self.items:
             self.buttons[name].configure(borderwidth=name, width=20, height=26, padx=2)
@@ -117,18 +154,23 @@ class Width(PaletteItem):
             return self.current*4
         else:
             return self.current
+    def icon_select(self,item):
+        self.icon.configure(text=f"W{item}")
+#        self.icon.configure(highlightborder=item,highlightcolor="black")
 #================================================================================
 class Type(PaletteItem):
     parent = None #the palette
     items = ["curve", "line", "rectangle", "oval", "text", "select"]
+    icons =  {"curve": "🖋", "line": "⟋", "rectangle": "▢", "oval":"◯","text":"A","select": "✢"}
     default = "curve"
     exclude = ["text"]
     template = {}
+    icontext = "T"
     def modify_buttons(self, root):
-        icons =  {"curve": "🖋", "line": "⟋", "rectangle": "▢", "oval":"◯","text":"A","select": "✢"}
+        
         for name in self.items:
             widget = self.buttons[name]
-            txt = tk.Label(widget, text = icons[name])
+            txt = tk.Label(widget, text = self.icons[name])
             bindtags = list(txt.bindtags())
             bindtags.insert(1, widget)
             txt.bindtags(tuple(bindtags))
@@ -138,6 +180,8 @@ class Type(PaletteItem):
             name = self.current
         templates = {"curve": Curve, "line": Line, "rectangle": Rectangle, "oval": Oval, "text": Text, "select": Select}
         return templates[name]
+    def icon_select(self,item):
+        self.icon.configure(text=self.icons[item],width=2)
 #================================================================================
 class Palette:
     widget = None
