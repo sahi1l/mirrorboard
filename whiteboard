@@ -7,7 +7,7 @@ from tkinter.font import Font
 from collections import OrderedDict
 from screeninfo import get_monitors
 
-limbo = -10000
+limbo = (-10000,-10000)
 def ifexists(val, defau):
     if val:
         return val
@@ -50,7 +50,7 @@ class PaletteItem:
         self.parent = parent
         for name in self.items:
             self.buttons[name] = tk.Frame(parent, borderwidth=4, background="grey", width=30, height=30, relief="raised")
-            self.buttons[name].pack(side=tk.LEFT)
+            self.buttons[name].pack(side=tk.LEFT,padx=1)
             self.buttons[name].bind("<1>", lambda e,name=name: self.select(name))
         self.current = self.default
         self.modify_buttons(root)
@@ -98,11 +98,13 @@ class Color(PaletteItem):
 #================================================================================
 class Width(PaletteItem):
     items = [1,2,4,6,8]
-    fontbase = 8 #font size is fontbase + width
-    default = 1
+#    fontbase = 8 #font size is fontbase + width
+    default = 2
     def modify_buttons(self,root):
         for name in self.items:
-            self.buttons[name].configure(borderwidth=name, width=20, height=20, padx=2)
+            self.buttons[name].configure(borderwidth=name, width=20, height=26, padx=2)
+#            lbl = tk.Label(self.buttons[name], text="A", font=("Times",self.fontbase+name), foreground="white")
+#            lbl.pack()
             
     def highlight(self,widget,onQ):
         widget.configure(background=["grey","white"][onQ], relief="solid")
@@ -154,6 +156,30 @@ class Palette:
         self.navs["back"].pack(side = tk.LEFT)
         self.navs["new"].pack(side = tk.LEFT)
         self.navs["forward"].pack(side = tk.RIGHT)
+        monitors = get_monitors()
+        self.toggler("▢▣",self.toggleMirror,len(get_monitors())>1)
+        self.toggler(" 2 ",self.toggleSecondPage,True)
+    def toggleMirror(self, onQ):
+        if onQ:
+            pages.show_mirror(True)
+        else:
+            pages.mirror.withdraw()
+    def toggleSecondPage(self, onQ):
+        pages.show2ndpage = onQ
+        pages.show(pages.curpage)
+    def toggler(self, label, command, initvalue):
+        button = tk.Label(self.widget, text=label, borderwidth=4, relief="raised")
+        button.status = not initvalue
+        button.pack(side=tk.LEFT)
+        button.bind("<1>", lambda e,btn=button, cmd=command: self.toggleclick(btn,cmd))
+        self.toggleclick(button,command)
+    def toggleclick(self, button, command):
+        button.status = not button.status
+        relief = "raised"
+        if button.status: relief = "sunken"
+        button.config(relief=relief)
+        command(button.status)
+        
 
 #================================================================================
 #SECTION: Elements
@@ -225,8 +251,8 @@ class Curve(Element):
         self.mirror.coords(self.mobj, *pts)
         self.scale_mirror()
     def hide(self):
-        self.canvas.moveto(self.obj,limbo,limbo)
-        self.mirror.moveto(self.mobj,limbo,limbo)
+        self.canvas.moveto(self.obj,*limbo)
+        self.mirror.moveto(self.mobj,*limbo)
 #        self.canvas.moveto(self.obj, *(self.points[0]))
 #        self.canvas.coords(self.obj, 0,0,0,0)
     def add(self, x, y, shift=False):
@@ -280,8 +306,8 @@ class Shape(Element):
         self.scale_mirror()
     def hide(self):
 #        self.canvas.coords(self.obj, 0,0,0,0)
-        self.canvas.moveto(self.obj,-10000,-10000)
-        self.mirror.moveto(self.mobj,-10000,-10000)
+        self.canvas.moveto(self.obj,*limbo)
+        self.mirror.moveto(self.mobj,*limbo)
     def lock(self,x,y):
         result = Point(x,y)
         d = result - self.ul
@@ -338,6 +364,7 @@ class Text(Shape):
     txtwidget = None
     text = ""
     locked = False
+    color = "black"
     def __init__(self,page,x,y,**args):
         self.init(page,x,y,**args)
         self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=1)
@@ -350,16 +377,18 @@ class Text(Shape):
         self.canvas.delete(self.obj)
         self.txtwidget.destroy()
         self.mfont.size = int(self.size*self.scale)
-        self.obj = self.canvas.create_text(*self.ul.list(), text=text, anchor=tk.NW,font=self.font)
-        self.mobj = self.mirror.create_text(*self.ul.list(), text=text, anchor=tk.NW,font=self.mfont)
+        self.obj = self.canvas.create_text(*self.ul.list(), text=text,
+                                               anchor=tk.NW,font=self.font, fill=self.color)
+        self.mobj = self.mirror.create_text(*self.ul.list(), text=text,
+                                                anchor=tk.NW,font=self.mfont, fill=self.color)
         self.scale_mirror()
         
         #FIX: change font size?
         palette.palette["type"].select(palette.palette["type"].last)
     
     def hide(self):
-        self.canvas.moveto(self.obj,-10000,-10000)
-        self.mirror.moveto(self.mobj,-10000,-10000)
+        self.canvas.moveto(self.obj,*limbo)
+        self.mirror.moveto(self.mobj,*limbo)
     def update(self):
         if not self.locked and not self.txtwidget:
             self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
@@ -371,7 +400,8 @@ class Text(Shape):
             #FIX: change font size?
     def done(self):
         width,height = (self.lr - self.ul).list()
-        self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD,font=self.font)
+        self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD,font=self.font,fg=self.color)
+        self.txtwidget.bind("<Escape>",lambda e:self.lock())
         self.canvas.delete(self.obj)
         self.obj = self.canvas.create_window(self.ul.x-5,self.ul.y-5,anchor=tk.NW, window=self.txtwidget, width=width, height=height)
         self.canvas.focus(self.obj)
@@ -403,12 +433,22 @@ class Page:
         self.page = page
         self.scale = pages.scale
         self.mRoot = mirror
-        self.canvas = tk.Canvas(parent, width=pages.cX, height = pages.cY, background="white")
+        self.canvas = tk.Canvas(parent,
+                                    width=pages.cX,
+                                    height = pages.cY,
+                                    background="white",highlightbackground="black")
+        self.canvas.create_text(0,
+                                0,
+                                anchor=tk.NW,
+                                text=" "+str(page+1),fill="grey", font=('Arial',18))
         self.mirror = tk.Canvas(self.mRoot,
-                                    width=pages.cX*self.scale,
-                                    height=pages.cY*self.scale,
-                                    background="white")
-        print(f"Page mirror: {self.scale, pages.cX*self.scale, pages.cY*self.scale}")
+                                    width=(pages.cX-10)*self.scale,
+                                    height=(pages.cY-10)*self.scale,
+                                    background="white", highlightbackground="black")
+        mpage = self.mirror.create_text(0,
+                                0,
+                                anchor=tk.NW, text=" "+str(page+1),fill="grey", font=('Arial',18))
+#        self.mirror.scale(mpage, 0,0, self.scale,self.scale)
         self.canvas.bind("<1>", self.startMouse)
         self.canvas.bind("<B1-Motion>", self.dragMouse)
         self.canvas.bind("<Shift-B1-Motion>",lambda e,shift=True: self.dragMouse(e,shift))
@@ -433,7 +473,6 @@ class Page:
         if self.selectQ():
             d = 5
             obj = self.canvas.find_overlapping(e.x-d,e.y-d,e.x+d,e.y+d)
-            print(f"{obj=}")
             if obj:
                 self.chosen = Change(obj)
                 self.mchosen = Change(obj)
@@ -491,12 +530,14 @@ class Pages:
     cX = 700 #width of each page
     cY = 906 #cX*aR
     curpage = 0
+    show2ndpage = True
     selected = 0 #page that is selected, might be different from curpage
     #FIX: I need to implement this selected business!
     pages = []
     parent = None
     nums = [] #list of numbers
     Ncols = 2
+    scale = 1
     mirror = None #widget for the mirror topwindow
     def __init__(self,parent): #parent is what we call "main"
         self.parent = parent
@@ -515,17 +556,15 @@ class Pages:
 
     def show_mirror(self,force=False):
         monitors = get_monitors()
-        print(monitors)
         if len(monitors)>1 or force:
-            M = monitors[1]
+            M = monitors[-1]
             self.mirror.deiconify()
-            print(f"{M.width=},{2*self.cX=}", f"{M.height=},{self.cY=}")
             nscaleW = M.width/(2*self.cX)
             nscaleH = M.height/self.cY
             self.scale = min(nscaleW,nscaleH)
             geometry = f"{int(self.scale*2*self.cX)}x{int(self.scale*2*self.cY)}+{M.x}+{M.y}"
-            print(f"{nscaleW=}\n{nscaleH=}\n{geometry=}")
             self.mirror.geometry(geometry)
+            self.mirror.lower(self.parent)
         else:
             self.mirror.withdraw()
         
@@ -560,6 +599,9 @@ class Pages:
             self.nums[pg].config(text=str(self.curpage+pg+1))
             self.pages[self.curpage+pg].show(pg)
             self.pages[self.curpage+pg].poke()
+        if not self.show2ndpage:
+            self.nums[1].pack_forget()
+            self.pages[self.curpage+1].forget()
 
     def get(self):
         return self.pages[self.selected]
