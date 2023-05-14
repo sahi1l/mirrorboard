@@ -45,12 +45,15 @@ class PaletteItem:
     current = None
     default = None
     last = None
+    container = None
     def __init__(self,parent,root=None):
         self.buttons = {}
         self.parent = parent
+        self.container = tk.Frame(parent)
+        self.container.pack(side=tk.LEFT, padx=3)
         for name in self.items:
-            self.buttons[name] = tk.Frame(parent, borderwidth=4, background="grey", width=30, height=30, relief="raised")
-            self.buttons[name].pack(side=tk.LEFT,padx=1)
+            self.buttons[name] = tk.Frame(self.container, borderwidth=4, background="grey", width=30, height=30, relief="raised")
+            self.buttons[name].pack(side=tk.LEFT)
             self.buttons[name].bind("<1>", lambda e,name=name: self.select(name))
         self.current = self.default
         self.modify_buttons(root)
@@ -312,9 +315,9 @@ class Shape(Element):
         result = Point(x,y)
         d = result - self.ul
         if abs(d.x)<abs(d.y):
-            result.x = ul.x + sign(d.x)*abs(d.y)
+            result.x = self.ul.x + sign(d.x)*abs(d.y)
         else:
-            result.y = ul.y + sign(d.y)*abs(d.x)
+            result.y = self.ul.y + sign(d.y)*abs(d.x)
         return result
     def add(self,x,y, shift=False):
         p = Point(x,y)
