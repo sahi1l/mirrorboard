@@ -46,7 +46,6 @@ class Selection:
         if not self.element:
             self.saved["color"] = palette.palette["color"].current
             self.saved["width"] = palette.palette["width"].current
-            print(f"Selection.select:{self.saved=}")
         self.clear()
         self.element = element
         self.canvas = element.canvas
@@ -294,7 +293,6 @@ class Element: #generic class
     mirror = None
     scale = None
     obj = None #the ID (number) of the object
-    mobj = None #the ID (number) of the object on the mirror
     def init(self, page):
         self.page = page
         self.canvas = page.canvas
@@ -305,7 +303,7 @@ class Element: #generic class
     def __str__(self):
         return f"page={self.page.page}, obj={self.obj}"
     def scale_mirror(self):
-        self.mirror.scale(self.mobj, 0,0, self.scale,self.scale)
+        self.mirror.scale(self.obj, 0,0, self.scale,self.scale)
     def add(self, x, y, shift=False): pass
     def done(self): pass
     def hide(self): pass #hide the graphic
@@ -316,31 +314,31 @@ class Element: #generic class
     def set_width(self,width):
         self.width = width
         self.canvas.itemconfigure(self.obj, width=self.width)
-        self.mirror.itemconfigure(self.mobj, width=self.width)
+        self.mirror.itemconfigure(self.obj, width=self.width)
 
     def __del__(self):
         if self.obj:
             self.canvas.delete(self.obj)
-            self.mirror.delete(self.mobj)
+            self.mirror.delete(self.obj)
 #============================================================
 class Drawn(Element):
     ul = None #location of some reference origin
     color = None
     width = None
     obj = None
-    mobj = None
     color_target = "fill"
     def dinit(self,page,x,y,color=None,width=None,**kargs):
         self.init(page)
         self.color = ifexists(color, get("color"))
         self.width = ifexists(width, get("width"))
         self.ul = Point(x,y)
+        self.obj = self.page.nexttag()
     def center(self,x,y,w):
         return [x-w/2,y-w/2,x+w/2,y+w/2]
     def set_color(self,color):
         self.color = color
         self.canvas.itemconfigure(self.obj, {self.color_target:self.color})
-        self.mirror.itemconfigure(self.mobj, {self.color_target:self.color})
+        self.mirror.itemconfigure(self.obj, {self.color_target:self.color})
     def highlight(self, onQ=True):
         if onQ:
             selection.select(self)
@@ -348,11 +346,11 @@ class Drawn(Element):
             selection.stop()
     def d_update(self,points):
         self.canvas.coords(self.obj, *points)
-        self.mirror.coords(self.mobj, *points)
+        self.mirror.coords(self.obj, *points)
         self.scale_mirror()
     def hide(self):
         self.canvas.moveto(self.obj,*limbo)
-        self.mirror.moveto(self.mobj,*limbo)
+        self.mirror.moveto(self.obj,*limbo)
     def done(self):
         pass
 
@@ -364,8 +362,8 @@ class Curve(Drawn):
     cursor = None
     def __init__(self, page, x, y, **args):
         self.dinit(page,x,y,**args)
-        self.obj = self.canvas.create_line((x,y),(x,y), fill=self.color, width=self.width)
-        self.mobj = self.mirror.create_line((x,y),(x,y), fill=self.color, width=self.width)
+        self.canvas.create_line((x,y),(x,y), fill=self.color, width=self.width, tag=self.obj)
+        self.mirror.create_line((x,y),(x,y), fill=self.color, width=self.width, tag=self.obj)
         self.scale_mirror()
         self.cursor = self.canvas.create_oval(*self.center(x,y,self.width), fill="", outline="black") #*2 #I don't know why this is here!
         self.canvas.lift(self.cursor)
@@ -430,15 +428,25 @@ class Shape(Drawn):
 class Rectangle(Shape):
     def __init__(self,canvas,x,y,**args):
         self.dinit(canvas,x,y,**args)
-        self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=self.width)
-        self.mobj = self.mirror.create_rectangle(x,y,x,y,outline = self.color, width=self.width)
+        prams = {
+            self.color_target: self.color,
+            "width": self.width,
+            "tag": self.obj
+            }
+        self.canvas.create_rectangle(x,y,x,y,prams)
+        self.mirror.create_rectangle(x,y,x,y,prams)
         self.scale_mirror()
 class Line(Shape):
     color_target = "fill"
     def __init__(self,canvas,x,y,**args):
         self.dinit(canvas,x,y,**args)
-        self.obj = self.canvas.create_line(x,y,x,y,fill = self.color, width=self.width)
-        self.mobj = self.mirror.create_line(x,y,x,y,fill = self.color, width=self.width)
+        prams = {
+            self.color_target: self.color,
+            "width": self.width,
+            "tag": self.obj
+            }
+        self.canvas.create_line(x,y,x,y,prams)
+        self.mirror.create_line(x,y,x,y,prams)
         self.scale_mirror()
     def lock(self,x,y):
         tolerance = 2/180
@@ -455,8 +463,13 @@ class Line(Shape):
 class Oval(Shape):
     def __init__(self,canvas,x,y,**args):
         self.dinit(canvas,x,y,**args)
-        self.obj = self.canvas.create_oval(x,y,x,y,outline = self.color, width=self.width)
-        self.mobj = self.mirror.create_oval(x,y,x,y,outline = self.color, width=self.width)
+        prams = {
+            self.color_target: self.color,
+            "width": self.width,
+            "tag": self.obj
+            }
+        self.canvas.create_oval(x,y,x,y,prams)
+        self.mirror.create_oval(x,y,x,y,prams)
         self.scale_mirror()
 #============================================================
 class Text(Shape):
@@ -481,10 +494,14 @@ class Text(Shape):
         self.canvas.delete(self.obj)
         self.txtwidget.destroy()
         self.mfont.size = int(self.size*self.scale)
-        self.obj = self.canvas.create_text(*self.ul.list(), text=text,
-                                               anchor=tk.NW,font=self.font, fill=self.color)
-        self.mobj = self.mirror.create_text(*self.ul.list(), text=text,
-                                                anchor=tk.NW,font=self.mfont, fill=self.color)
+        prams = {
+            "text": text,
+            "anchor": tk.NW,
+            "font": self.font,
+            self.color_target: self.color
+            }
+        self.canvas.create_text(*self.ul.list(), prams)
+        self.mirror.create_text(*self.ul.list(), prams)
         self.scale_mirror()
         
         #FIX: change font size?
@@ -492,19 +509,25 @@ class Text(Shape):
     
     def hide(self):
         self.canvas.moveto(self.obj,*limbo)
-        self.mirror.moveto(self.mobj,*limbo)
+        self.mirror.moveto(self.obj,*limbo)
     def update(self):
         if not self.locked and not self.txtwidget:
             self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
         else:
             self.canvas.moveto(self.obj,self.ul.x,self.ul.y)
-            self.mirror.moveto(self.mobj,self.ul.x,self.ul.y)
+            self.mirror.moveto(self.obj,self.ul.x,self.ul.y)
             self.scale_mirror()
             self.mfont.size = int(self.size*self.scale)
             #FIX: change font size?
     def done(self):
         width,height = (self.lr - self.ul).list()
-        self.txtwidget = tk.Text(self.canvas,width=width//self.size, height=height//self.size,borderwidth=1,wrap=tk.WORD,font=self.font,fg=self.color)
+        self.txtwidget = tk.Text(self.canvas,
+                                     width=width//self.size,
+                                     height=height//self.size,
+                                     borderwidth=1,
+                                     wrap=tk.WORD,
+                                     font=self.font,
+                                     fg=self.color)
         self.txtwidget.bind("<Escape>",lambda e:self.lock())
         self.canvas.delete(self.obj)
         self.obj = self.canvas.create_window(self.ul.x-5,self.ul.y-5,anchor=tk.NW, window=self.txtwidget, width=width, height=height)
@@ -550,6 +573,7 @@ class Page:
     mRoot = None #window where the mirror resides
     mirror = None #the mirrored canvas
     scale = 1 #the scale of the mirror
+    n = 1 #the number for the next item
     def __init__(self, parent, pages, page, mirror):
         self.parent = parent
         self.page = page
@@ -578,6 +602,9 @@ class Page:
         self.canvas.bind("<ButtonRelease-1>", self.doneMouse)
     def selectQ(self): #true if in select mode
         return (palette.palette["type"].current == "select")
+    def nexttag(self): #return the next tag
+        self.n += 1
+        return f"o{self.n}"
     def poke(self):
         self.canvas.update()
         self.mirror.update()
@@ -591,11 +618,13 @@ class Page:
         self.mirror.grid(row=0,column=col)
     def forget(self):
         self.canvas.grid_forget()
-    def obj_to_element(self,obj):
-        try:
-            print(f"{[x.obj for x in self.elements]=}")
-            return next(filter(lambda x:x.obj==obj, self.elements))
-        except StopIteration:
+    def obj_to_element(self,cvnum):
+        tags = filter(lambda x:x[0]=='o' and x[1:].isdigit(),self.canvas.gettags(cvnum))
+        obj = list(tags)[0]
+        el = list(filter(lambda x:x.obj==obj,self.elements))
+        if el:
+            return el[0]
+        else:
             return None
     def startMouse(self, e):
         if self.chosen:
@@ -603,13 +632,14 @@ class Page:
         self.chosen = None
         if self.selectQ():
             d = 5
-            obj = self.canvas.find_overlapping(e.x-d,e.y-d,e.x+d,e.y+d)
-            print(f"{obj=}")
-            if obj:
-                obj = obj[0]
-                self.chosen = self.obj_to_element(obj)
-                print(f"{self.chosen=}")
-                self.chosen.highlight(True)
+            cvnum = self.canvas.find_overlapping(e.x-d,e.y-d,e.x+d,e.y+d)
+            #cnumber is the number of the element on the canvas
+            #I need its tag
+            if cvnum:
+                el = self.obj_to_element(cvnum)
+                self.chosen = el
+                if self.chosen:
+                    self.chosen.highlight(True)
         else:
             self.parent.focus()
             pages.select(self.page)
