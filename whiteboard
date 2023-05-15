@@ -76,16 +76,14 @@ class Selection:
 
 selection = Selection()
 
-      
-#================================================================================
 
-
-root = tk.Tk()
-root.title("Whiteboard")
-
-#================================================================================
+#============================================================
+
+#SECTION: Palette
+#============================================================
 get = lambda grp: palette.palette[grp].get()
-#================================================================================
+#============================================================
+
 class PaletteItem:
     items = []
     buttons = None
@@ -154,7 +152,7 @@ class PaletteItem:
         if item not in self.exclude:
             self.last = self.current
         self.current = item
-#================================================================================
+#============================================================
 class Color(PaletteItem):
  #   items = ["black", "red", "blue", "green", "yellow", "white"]
     items = ["black", "#D81B1B", "#1E88E5", "#028A92", "#FFC107", "white"]
@@ -191,7 +189,7 @@ class Color(PaletteItem):
                 self.icon.configure(bg=item, fg="black")
         if selection.element:
             selection.element.set_color(self.colors[item]) #replace this with a Change item
-#================================================================================
+#============================================================
 class Width(PaletteItem):
     items = [1,2,4,6,8]
 #    fontbase = 8 #font size is fontbase + width
@@ -216,7 +214,7 @@ class Width(PaletteItem):
         if selection.element:
             selection.element.set_width(item)
 #        self.icon.configure(highlightborder=item,highlightcolor="black")
-#================================================================================
+#============================================================
 class Type(PaletteItem):
     parent = None #the palette
     items = ["curve", "line", "rectangle", "oval", "text", "select"]
@@ -242,7 +240,7 @@ class Type(PaletteItem):
         self.icon.configure(text=self.icons[item],width=2)
         if not item=="Select":
             selection.stop()
-#================================================================================
+#============================================================
 class Palette:
     widget = None
     palette = {
@@ -288,10 +286,9 @@ class Palette:
         command(button.status)
         
 
-#================================================================================
+
 #SECTION: Elements
-#--------------------------------------------------------------------------------
-#================================================================================
+#============================================================
 class Element: #generic class
     canvas = None #the canvas this element lives on
     mirror = None
@@ -313,6 +310,8 @@ class Element: #generic class
     def done(self): pass
     def hide(self): pass #hide the graphic
     def update(self): pass
+    def save(self): pass
+        #Return a dictionary that describes this element, for saving
     def highlight(self,onQ): pass #highlight to show it is selected
     def set_width(self,width):
         self.width = width
@@ -323,66 +322,62 @@ class Element: #generic class
         if self.obj:
             self.canvas.delete(self.obj)
             self.mirror.delete(self.mobj)
-#================================================================================
-class ColorChange(Element): #instructs an element to change certain things
-    o_setting = None
-    n_setting = None
-    element = None #this is the element in question
-    def __init__(self,page,element,n_setting):
-        self.init(page)
-        self.element = element
-        self.o_setting = self.element.color
-        self.n_setting = n_setting
-    def hide(self):
-        self.element.set_color(self.o_setting)
-        pass
-    def update(self):
-        #change the elements on object to the new settings
-        self.element.set_color(self.n_setting)
-        pass
-#================================================================================    
-class Curve(Element):
-    points = []
+#============================================================
+class Drawn(Element):
+    ul = None #location of some reference origin
     color = None
     width = None
-    cursor = None
-    ul = None #location of the first point
-    def __init__(self, page, x, y, color=None, width=None):
+    obj = None
+    mobj = None
+    color_target = "fill"
+    def dinit(self,page,x,y,color=None,width=None,**kargs):
         self.init(page)
         self.color = ifexists(color, get("color"))
         self.width = ifexists(width, get("width"))
-        self.obj = self.canvas.create_line((x,y),(x,y), fill=self.color, width=self.width)
-        self.mobj = self.mirror.create_line((x,y),(x,y), fill=self.color, width=self.width)
-        self.scale_mirror()
-        self.mirror.scale(self.mobj,0,0,self.scale,self.scale)
-        self.cursor = self.canvas.create_oval(*self.center(x,y,self.width), fill="", outline="black") #*2
-        self.canvas.lift(self.cursor)
-        self.points = [(x,y)]
         self.ul = Point(x,y)
     def center(self,x,y,w):
         return [x-w/2,y-w/2,x+w/2,y+w/2]
     def set_color(self,color):
         self.color = color
-        self.canvas.itemconfigure(self.obj, fill=self.color)
-        self.mirror.itemconfigure(self.mobj, fill=self.color)
-    def highlight(self,onQ=True):
-        #element highlight
+        self.canvas.itemconfigure(self.obj, {self.color_target:self.color})
+        self.mirror.itemconfigure(self.mobj, {self.color_target:self.color})
+    def highlight(self, onQ=True):
         if onQ:
             selection.select(self)
         else:
             selection.stop()
-    def update(self):
-        pts = [i for sub in self.points for i in sub]
-        self.canvas.coords(self.obj, *pts)
-        self.mirror.coords(self.mobj, *pts)
+    def d_update(self,points):
+        self.canvas.coords(self.obj, *points)
+        self.mirror.coords(self.mobj, *points)
         self.scale_mirror()
     def hide(self):
         self.canvas.moveto(self.obj,*limbo)
         self.mirror.moveto(self.mobj,*limbo)
+    def done(self):
+        pass
+
+         
+#============================================================
+class Curve(Drawn):
+    ul = None #location of the first point
+    points = []
+    cursor = None
+    def __init__(self, page, x, y, **args):
+        self.dinit(page,x,y,**args)
+        self.obj = self.canvas.create_line((x,y),(x,y), fill=self.color, width=self.width)
+        self.mobj = self.mirror.create_line((x,y),(x,y), fill=self.color, width=self.width)
+        self.scale_mirror()
+        self.cursor = self.canvas.create_oval(*self.center(x,y,self.width), fill="", outline="black") #*2 #I don't know why this is here!
+        self.canvas.lift(self.cursor)
+        self.points = [(x,y)]
+        
+    def update(self):
+        pts = [i for sub in self.points for i in sub]
+        self.d_update(pts)
     def add(self, x, y, shift=False):
         self.points += [(x,y)]
         self.update()
-        if self.cursor:
+        if self.cursor: #I don't know why this is here
             self.canvas.coords(self.cursor,*self.center(x,y,self.width))
             self.canvas.lift(self.cursor)
     def straighten(self):
@@ -404,42 +399,25 @@ class Curve(Element):
             self.cursor = None
         return 
                            
-#================================================================================
-class Shape(Element):
+#============================================================
+class Shape(Drawn):
+    color_target = "outline"
     ul = None #x,y of upper-left corner
     lr = None #x,y of lower-right corner
     color = None
     width = None
-    def init(self, page, x, y, color=None, width=None, fill=None):
-        self.page = page
-        self.canvas = page.canvas
-        self.mirror = page.mirror
-        self.scale = page.scale
-        self.color = ifexists(color, get("color"))
-        self.width = ifexists(width, get("width"))
-        self.ul = Point(x,y)
-        self.lr = Point(x,y)
     def __init__(self,canvas,x,y,**args):
-        self.init(self,canvas,x,y,**args)
-    def set_color(self,color):
-        self.color = color
-        self.canvas.itemconfigure(self.obj, outline=self.color)
-        self.mirror.itemconfigure(self.mobj, outline=self.color)
-        
-    def highlight(self,onQ=True):
-        #element highlight
-        if onQ:
-            selection.select(self)
-        else:
-            selection.stop()
+        self.dinit(self,canvas,x,y,**args)
+        self.lr = Point(x,y)
+
     def update(self):
-        self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
-        self.mirror.coords(self.mobj, *(self.ul.list()+self.lr.list()))
-        self.scale_mirror()
-    def hide(self):
-#        self.canvas.coords(self.obj, 0,0,0,0)
-        self.canvas.moveto(self.obj,*limbo)
-        self.mirror.moveto(self.mobj,*limbo)
+        self.d_update(self.ul.list()+self.lr.list())
+    def add(self,x,y, shift=False):
+        p = Point(x,y)
+        if shift:
+            p = self.lock(x,y)
+        self.lr = p
+        self.update()
     def lock(self,x,y):
         result = Point(x,y)
         d = result - self.ul
@@ -448,29 +426,22 @@ class Shape(Element):
         else:
             result.y = self.ul.y + sign(d.y)*abs(d.x)
         return result
-    def add(self,x,y, shift=False):
-        p = Point(x,y)
-        if shift:
-            p = self.lock(x,y)
-        self.lr = p
-        self.update()
-    def done(self):
-        pass
-#FIX: allow for constrained motion!
+    
 class Rectangle(Shape):
     def __init__(self,canvas,x,y,**args):
-        self.init(canvas,x,y,**args)
+        self.dinit(canvas,x,y,**args)
         self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=self.width)
         self.mobj = self.mirror.create_rectangle(x,y,x,y,outline = self.color, width=self.width)
         self.scale_mirror()
 class Line(Shape):
+    color_target = "fill"
     def __init__(self,canvas,x,y,**args):
-        self.init(canvas,x,y,**args)
+        self.dinit(canvas,x,y,**args)
         self.obj = self.canvas.create_line(x,y,x,y,fill = self.color, width=self.width)
         self.mobj = self.mirror.create_line(x,y,x,y,fill = self.color, width=self.width)
         self.scale_mirror()
     def lock(self,x,y):
-        tolerance = 2  /180
+        tolerance = 2/180
         P = Point(x,y)
         d = P - self.ul
         theta = math.atan2(d.y,d.x)/math.pi #ranges from -1 to 1
@@ -483,12 +454,13 @@ class Line(Shape):
         
 class Oval(Shape):
     def __init__(self,canvas,x,y,**args):
-        self.init(canvas,x,y,**args)
+        self.dinit(canvas,x,y,**args)
         self.obj = self.canvas.create_oval(x,y,x,y,outline = self.color, width=self.width)
         self.mobj = self.mirror.create_oval(x,y,x,y,outline = self.color, width=self.width)
         self.scale_mirror()
-#================================================================================
+#============================================================
 class Text(Shape):
+    color_target = "fg"
     font = None
     mfont = None
     family="monofur"
@@ -498,7 +470,7 @@ class Text(Shape):
     locked = False
     color = "black"
     def __init__(self,page,x,y,**args):
-        self.init(page,x,y,**args)
+        self.dinit(page,x,y,**args)
         self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=1)
         self.font = Font(family=self.family, size=self.size)
         self.mfont = Font(family=self.family, size=int(self.size*self.scale))
@@ -539,16 +511,35 @@ class Text(Shape):
         self.canvas.focus(self.obj)
         self.txtwidget.bind("<FocusOut>", lambda e:self.lock())
         self.txtwidget.focus()
-#================================================================================
+#============================================================
 class Select(Element):
     def __init__(self,parent,root=None):
         pass
+#============================================================
+class ColorChange(Element): #instructs an element to change certain things
+    """
+    The idea: this sits in the list of elements of a page.
+    When it is updated, it changes the color of a certain element
+    """
+    o_setting = None
+    n_setting = None
+    element = None #this is the element in question
+    def __init__(self,page,element,n_setting):
+        self.init(page)
+        self.element = element
+        self.o_setting = self.element.color
+        self.n_setting = n_setting
+    def hide(self):
+        self.element.set_color(self.o_setting)
+        pass
+    def update(self):
+        #change the elements on object to the new settings
+        self.element.set_color(self.n_setting)
+        pass
     
-
-#================================================================================
-#SECTION: Main
-#--------------------------------------------------------------------------------
-#================================================================================
+
+#SECTION: Pages
+#============================================================
 class Page:
     parent = None #the parent widget
     canvas = None #widget containing the canvas
@@ -664,7 +655,7 @@ class Page:
         while self.undone:
             x = self.undone.pop(-1)
             del x
-#================================================================================
+#============================================================
 class Pages:
     aR = 11/8.5
     cX = 700 #width of each page
@@ -749,12 +740,17 @@ class Pages:
         N = len(self.pages)-1
         num = max(min(self.curpage+dn,N),0)
         self.show(num)
-    
+
+
+
+#SECTION: Setup
+root = tk.Tk()
+root.title("Whiteboard")
 root.bind("<Key-s>", lambda e: pages.get().straighten(e))
 root.bind("<Command-z>", lambda e: pages.get().undo(e))
 root.bind("<Command-Z>", lambda e: pages.get().redo(e))
 
-#================================================================================
+#============================================================
 main = tk.Frame(root, background="cyan") #contains the canvas
 pages = Pages(main)
 main.configure(width = pages.cX*2, height = pages.cY)
@@ -762,6 +758,6 @@ palette = Palette(root,root,pages)
 palette.widget.pack(side=tk.TOP, fill=tk.X)
 main.pack(side=tk.BOTTOM, fill=tk.X)
 
-#================================================================================
+#============================================================
 root.bind("<C>", pages.get().clear)
 root.mainloop()
