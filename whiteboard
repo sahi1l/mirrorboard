@@ -32,14 +32,29 @@ class Point:
     def __str__(self,other):
         return str((self.x,self.y))
 
-class Animation:
+class Selection:
     state = 0
-    saved = ""
-    running = True
-    def __init__(self,canvas,obj):
-        self.canvas = canvas
-        self.obj = obj
-        self.saved = self.canvas.itemcget(self.obj,"dash")
+    saved_dash = ""
+    saved = {}
+    running = False
+    element = None #the selected element
+    canvas = None
+    obj = None
+    def __init__(self):
+        pass
+    def select(self,element):
+        if not self.element:
+            self.saved["color"] = palette.palette["color"].current
+            self.saved["width"] = palette.palette["width"].current
+            print(f"Selection.select:{self.saved=}")
+        self.clear()
+        self.element = element
+        self.canvas = element.canvas
+        self.obj = element.obj
+        palette.palette["color"].select(element.color)
+        palette.palette["width"].select(element.width)
+        self.saved_dash = self.canvas.itemcget(self.obj,"dash")
+        self.running = True
         self.animate()
     def animate(self):
         if self.running:
@@ -47,9 +62,20 @@ class Animation:
             self.canvas.itemconfigure(self.obj, dash=(3,), dashoffset=self.state)
             root.after(200, self.animate)
         else:
-            self.canvas.itemconfigure(self.obj,dash=self.saved,dashoffset=0)
+            self.clear()
+    def clear(self):
+        if self.element:
+            self.canvas.itemconfigure(self.obj, dash=self.saved_dash, dashoffset=0)
+            self.element = None
+            if self.saved:
+                palette.palette["color"].select(self.saved["color"])
+                palette.palette["width"].select(self.saved["width"])
+                self.saved = {}
     def stop(self):
         self.running = False
+
+selection = Selection()
+
       
 #================================================================================
 
@@ -130,15 +156,17 @@ class PaletteItem:
         self.current = item
 #================================================================================
 class Color(PaletteItem):
-    items = ["black", "red", "blue", "green", "yellow", "white"]
-    colors = OrderedDict([
-        ("black", "black"),
-        ("red", "#D81B1B"),
-        ("blue", "#1E88E5"),
-        ("green", "#028A92"),
-        ("yellow", "#FFC107"), 
-        ("white", "white"),
-    ])
+ #   items = ["black", "red", "blue", "green", "yellow", "white"]
+    items = ["black", "#D81B1B", "#1E88E5", "#028A92", "#FFC107", "white"]
+    colors = OrderedDict([(i,i) for i in items])
+#    colors = OrderedDict([
+#        ("black", "black"),
+#        ("red", "#D81B1B"),
+#        ("blue", "#1E88E5"),
+#        ("green", "#028A92"),
+#        ("yellow", "#FFC107"), 
+#        ("white", "white"),
+ #   ])
     default = "black"
     exclude = ["white"]
     icontext = "C"
@@ -157,7 +185,12 @@ class Color(PaletteItem):
         if item=="black":
             self.icon.configure(bg="black", fg="white")
         else:
-            self.icon.configure(bg=self.colors[item], fg="black")
+            try:
+                self.icon.configure(bg=self.colors[item], fg="black")
+            except KeyError:
+                self.icon.configure(bg=item, fg="black")
+        if selection.element:
+            selection.element.set_color(self.colors[item]) #replace this with a Change item
 #================================================================================
 class Width(PaletteItem):
     items = [1,2,4,6,8]
@@ -180,6 +213,8 @@ class Width(PaletteItem):
             return self.current
     def icon_select(self,item):
         self.icon.configure(text=f"W{item}")
+        if selection.element:
+            selection.element.set_width(item)
 #        self.icon.configure(highlightborder=item,highlightcolor="black")
 #================================================================================
 class Type(PaletteItem):
@@ -191,7 +226,6 @@ class Type(PaletteItem):
     template = {}
     icontext = "T"
     def modify_buttons(self, root):
-        
         for name in self.items:
             widget = self.buttons[name]
             txt = tk.Label(widget, text = self.icons[name])
@@ -206,13 +240,15 @@ class Type(PaletteItem):
         return templates[name]
     def icon_select(self,item):
         self.icon.configure(text=self.icons[item],width=2)
+        if not item=="Select":
+            selection.stop()
 #================================================================================
 class Palette:
     widget = None
     palette = {
+        "type": Type,
         "color": Color,
         "width": Width,
-        "type": Type,
         }
     navs = []
     def __init__(self,parent,root,pages):
@@ -263,11 +299,14 @@ class Element: #generic class
     obj = None #the ID (number) of the object
     mobj = None #the ID (number) of the object on the mirror
     def init(self, page):
+        self.page = page
         self.canvas = page.canvas
         self.mirror = page.mirror
         self.scale = page.scale
     def __init__(self, page):
         self.init(page)
+    def __str__(self):
+        return f"page={self.page.page}, obj={self.obj}"
     def scale_mirror(self):
         self.mirror.scale(self.mobj, 0,0, self.scale,self.scale)
     def add(self, x, y, shift=False): pass
@@ -275,6 +314,11 @@ class Element: #generic class
     def hide(self): pass #hide the graphic
     def update(self): pass
     def highlight(self,onQ): pass #highlight to show it is selected
+    def set_width(self,width):
+        self.width = width
+        self.canvas.itemconfigure(self.obj, width=self.width)
+        self.mirror.itemconfigure(self.mobj, width=self.width)
+
     def __del__(self):
         if self.obj:
             self.canvas.delete(self.obj)
@@ -324,9 +368,9 @@ class Curve(Element):
     def highlight(self,onQ=True):
         #element highlight
         if onQ:
-            self.animation = Animation(self.canvas, self.obj)
+            selection.select(self)
         else:
-            self.animation.stop()
+            selection.stop()
     def update(self):
         pts = [i for sub in self.points for i in sub]
         self.canvas.coords(self.obj, *pts)
@@ -367,6 +411,7 @@ class Shape(Element):
     color = None
     width = None
     def init(self, page, x, y, color=None, width=None, fill=None):
+        self.page = page
         self.canvas = page.canvas
         self.mirror = page.mirror
         self.scale = page.scale
@@ -380,14 +425,13 @@ class Shape(Element):
         self.color = color
         self.canvas.itemconfigure(self.obj, outline=self.color)
         self.mirror.itemconfigure(self.mobj, outline=self.color)
+        
     def highlight(self,onQ=True):
         #element highlight
         if onQ:
-            self.canvas.itemconfigure(self.obj, dash=(3,2))
+            selection.select(self)
         else:
-            self.canvas.itemconfigure(self.obj,dash=(1,))
-
-#        self.canvas.itemconfigure(self.obj,outline=[self.color,"chartreuse"][onQ])
+            selection.stop()
     def update(self):
         self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
         self.mirror.coords(self.mobj, *(self.ul.list()+self.lr.list()))
