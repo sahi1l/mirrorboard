@@ -13,6 +13,10 @@ def ifexists(val, defau):
         return val
     else:
         return defau
+def sign(x):
+    if x>0: return 1
+    if x<0: return -1
+    return 0
 
 class Point:
     x = 0
@@ -27,6 +31,26 @@ class Point:
         return [self.x,self.y]
     def __str__(self,other):
         return str((self.x,self.y))
+
+class Animation:
+    state = 0
+    saved = ""
+    running = True
+    def __init__(self,canvas,obj):
+        self.canvas = canvas
+        self.obj = obj
+        self.saved = self.canvas.itemcget(self.obj,"dash")
+        self.animate()
+    def animate(self):
+        if self.running:
+            self.state = (self.state+1)%6
+            self.canvas.itemconfigure(self.obj, dash=(3,), dashoffset=self.state)
+            root.after(200, self.animate)
+        else:
+            self.canvas.itemconfigure(self.obj,dash=self.saved,dashoffset=0)
+    def stop(self):
+        self.running = False
+      
 #================================================================================
 
 
@@ -250,26 +274,27 @@ class Element: #generic class
     def done(self): pass
     def hide(self): pass #hide the graphic
     def update(self): pass
+    def highlight(self,onQ): pass #highlight to show it is selected
     def __del__(self):
         if self.obj:
             self.canvas.delete(self.obj)
             self.mirror.delete(self.mobj)
 #================================================================================
-class Change(Element): #instructs an element to change certain things
-    delete = False #if true, the object has been deleted
-    color = None #or a 2-ple with the original and the new color
-    width = None #or a 2-ple with the original and the new width
-    text = None #or a 2-ple with the original and new text (and font eventually?)
-    move = None #or a 2-ple of two points, original ul and new ul
-    def __init__(self,page,obj,mobj):
+class ColorChange(Element): #instructs an element to change certain things
+    o_setting = None
+    n_setting = None
+    element = None #this is the element in question
+    def __init__(self,page,element,n_setting):
         self.init(page)
-        self.obj = obj
-        self.mobj = mobj
+        self.element = element
+        self.o_setting = self.element.color
+        self.n_setting = n_setting
     def hide(self):
-        #change the elements on object to the old settings
+        self.element.set_color(self.o_setting)
         pass
     def update(self):
         #change the elements on object to the new settings
+        self.element.set_color(self.n_setting)
         pass
 #================================================================================    
 class Curve(Element):
@@ -292,6 +317,16 @@ class Curve(Element):
         self.ul = Point(x,y)
     def center(self,x,y,w):
         return [x-w/2,y-w/2,x+w/2,y+w/2]
+    def set_color(self,color):
+        self.color = color
+        self.canvas.itemconfigure(self.obj, fill=self.color)
+        self.mirror.itemconfigure(self.mobj, fill=self.color)
+    def highlight(self,onQ=True):
+        #element highlight
+        if onQ:
+            self.animation = Animation(self.canvas, self.obj)
+        else:
+            self.animation.stop()
     def update(self):
         pts = [i for sub in self.points for i in sub]
         self.canvas.coords(self.obj, *pts)
@@ -300,8 +335,6 @@ class Curve(Element):
     def hide(self):
         self.canvas.moveto(self.obj,*limbo)
         self.mirror.moveto(self.mobj,*limbo)
-#        self.canvas.moveto(self.obj, *(self.points[0]))
-#        self.canvas.coords(self.obj, 0,0,0,0)
     def add(self, x, y, shift=False):
         self.points += [(x,y)]
         self.update()
@@ -328,10 +361,6 @@ class Curve(Element):
         return 
                            
 #================================================================================
-def sign(x):
-    if x>0: return 1
-    if x<0: return -1
-    return 0
 class Shape(Element):
     ul = None #x,y of upper-left corner
     lr = None #x,y of lower-right corner
@@ -347,6 +376,18 @@ class Shape(Element):
         self.lr = Point(x,y)
     def __init__(self,canvas,x,y,**args):
         self.init(self,canvas,x,y,**args)
+    def set_color(self,color):
+        self.color = color
+        self.canvas.itemconfigure(self.obj, outline=self.color)
+        self.mirror.itemconfigure(self.mobj, outline=self.color)
+    def highlight(self,onQ=True):
+        #element highlight
+        if onQ:
+            self.canvas.itemconfigure(self.obj, dash=(3,2))
+        else:
+            self.canvas.itemconfigure(self.obj,dash=(1,))
+
+#        self.canvas.itemconfigure(self.obj,outline=[self.color,"chartreuse"][onQ])
     def update(self):
         self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
         self.mirror.coords(self.mobj, *(self.ul.list()+self.lr.list()))
@@ -471,7 +512,6 @@ class Page:
     undone = [] #list of elements that have been undone
     page = None
     chosen = None
-    mchosen = None
     mRoot = None #window where the mirror resides
     mirror = None #the mirrored canvas
     scale = 1 #the scale of the mirror
@@ -516,17 +556,26 @@ class Page:
         self.mirror.grid(row=0,column=col)
     def forget(self):
         self.canvas.grid_forget()
+    def obj_to_element(self,obj):
+        try:
+            print(f"{[x.obj for x in self.elements]=}")
+            return next(filter(lambda x:x.obj==obj, self.elements))
+        except StopIteration:
+            return None
     def startMouse(self, e):
+        if self.chosen:
+            self.chosen.highlight(False)
+        self.chosen = None
         if self.selectQ():
             d = 5
             obj = self.canvas.find_overlapping(e.x-d,e.y-d,e.x+d,e.y+d)
+            print(f"{obj=}")
             if obj:
-                self.chosen = Change(obj)
-                self.mchosen = Change(obj)
-                self.elements += [self.chosen]
-            pass
+                obj = obj[0]
+                self.chosen = self.obj_to_element(obj)
+                print(f"{self.chosen=}")
+                self.chosen.highlight(True)
         else:
-            self.chosen = None
             self.parent.focus()
             pages.select(self.page)
             self.elements += [get("type")(self, e.x, e.y)]
