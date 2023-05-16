@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import tkinter as tk
+
 import numpy as np
 import math
 from tkinter import ttk
 from tkinter.font import Font
 from collections import OrderedDict
 from screeninfo import get_monitors
+from textdialog import Dialog
 
 limbo = (-10000,-10000)
 def ifexists(val, defau):
@@ -54,19 +56,18 @@ class Selection:
         self.obj = element.obj
         palette.palette["color"].select(element.color)
         palette.palette["width"].select(element.width)
-        self.saved_dash = self.canvas.itemcget(self.obj,"dash")
         self.running = True
         self.animate()
     def animate(self):
         if self.running:
             self.state = (self.state+1)%6
-            self.canvas.itemconfigure(self.obj, dash=(3,), dashoffset=self.state)
+            self.element.dash(self.state)
             root.after(200, self.animate)
         else:
             self.clear()
     def clear(self):
         if self.element:
-            self.canvas.itemconfigure(self.obj, dash=self.saved_dash, dashoffset=0)
+            self.element.dash(None)
             self.element = None
             if self.saved:
                 palette.palette["color"].select(self.saved["color"])
@@ -305,6 +306,7 @@ class Element: #generic class
     def __str__(self):
         return f"page={self.page.page}, obj={self.obj}"
     def scale_mirror(self):
+        #FIX: if the object is text, pull in the font and make a new font
         self.mirror.scale(self.obj, 0,0, self.scale,self.scale)
     def add(self, x, y, shift=False): pass
     def done(self): pass
@@ -327,6 +329,7 @@ class Drawn(Element):
     ul = None #location of some reference origin
     color = None
     width = None
+    dash = ""
     obj = None
     color_target = "fill"
     def dinit(self,page,x,y,color=None,width=None,**kargs):
@@ -346,6 +349,11 @@ class Drawn(Element):
             selection.select(self)
         else:
             selection.stop()
+    def dash(self, t): #t lets us animate it?
+        if t:
+            self.canvas.itemconfigure(self.obj, dash=(3,), dashoffset = t)
+        else:
+            self.canvas.itemconfigure(self.obj, dash="", dashoffset = 0)
     def drag(self,point):
         self.canvas.moveto(self.obj, *(point+self.ul))
     def d_update(self,points):
@@ -361,7 +369,6 @@ class Drawn(Element):
          
 #============================================================
 class Curve(Drawn):
-    ul = None #location of the first point
     points = []
     cursor = None
     def __init__(self, page, x, y, **args):
@@ -404,7 +411,6 @@ class Curve(Drawn):
 #============================================================
 class Shape(Drawn):
     color_target = "outline"
-    ul = None #x,y of upper-left corner
     lr = None #x,y of lower-right corner
     color = None
     width = None
@@ -477,67 +483,90 @@ class Oval(Shape):
         self.scale_mirror()
 #============================================================
 class Text(Shape):
-    color_target = "fg"
+    color_target = "fill"
     font = None
     mfont = None
     family="monofur"
     size=18
-    txtwidget = None
-    text = ""
-    locked = False
-    color = "black"
+    text=""
+    dragrectangle = None
     def __init__(self,page,x,y,**args):
         self.dinit(page,x,y,**args)
-        self.obj = self.canvas.create_rectangle(x,y,x,y,outline = self.color, width=1)
         self.font = Font(family=self.family, size=self.size)
         self.mfont = Font(family=self.family, size=int(self.size*self.scale))
-    def lock(self):
-        self.locked = True
-        self.canvas.update()
-        text = self.txtwidget.get('1.0','end')
-        self.canvas.delete(self.obj)
-        self.txtwidget.destroy()
-        self.mfont.size = int(self.size*self.scale)
         prams = {
-            "text": text,
-            "anchor": tk.NW,
+            self.color_target: self.color,
+            "tag": self.obj,
             "font": self.font,
-            self.color_target: self.color
             }
-        self.canvas.create_text(*self.ul, prams)
-        self.mirror.create_text(*self.ul, prams)
-        self.scale_mirror()
-        
-        #FIX: change font size?
-        palette.palette["type"].select(palette.palette["type"].last)
-    
-    def hide(self):
-        self.canvas.moveto(self.obj,*limbo)
-        self.mirror.moveto(self.obj,*limbo)
-    def update(self):
-        if not self.locked and not self.txtwidget:
-            self.canvas.coords(self.obj, *(self.ul+self.lr))
-        else:
-            self.canvas.moveto(self.obj,self.ul.x,self.ul.y)
-            self.mirror.moveto(self.obj,self.ul.x,self.ul.y)
-            self.scale_mirror()
-            self.mfont.size = int(self.size*self.scale)
-            #FIX: change font size?
+        self.canvas.create_text(x,y,prams)
+        prams["font"] = self.mfont
+        self.mirror.create_text(x,y,prams)
+        self.scale_mirror() #FIX: incorporate the new font into scale_mirror
+        self.dialog = Dialog(callback=self.dialogupdate, default={})
+        #NOTE: just click for text, don't drag
     def done(self):
-        width,height = (self.lr - self.ul).list()
-        self.txtwidget = tk.Text(self.canvas,
-                                     width=width//self.size,
-                                     height=height//self.size,
-                                     borderwidth=1,
-                                     wrap=tk.WORD,
-                                     font=self.font,
-                                     fg=self.color)
-        self.txtwidget.bind("<Escape>",lambda e:self.lock())
-        self.canvas.delete(self.obj)
-        self.obj = self.canvas.create_window(self.ul.x-5,self.ul.y-5,anchor=tk.NW, window=self.txtwidget, width=width, height=height)
-        self.canvas.focus(self.obj)
-        self.txtwidget.bind("<FocusOut>", lambda e:self.lock())
-        self.txtwidget.focus()
+        pass
+    def add(self):
+        pass
+    def set_width(self,item):
+        pass
+    def highlight(self,onQ=True):
+        if onQ:
+            selection.select(self)
+        else:
+            selection.stop()
+    def dash(self,t):
+        if t:
+            if not self.dragrectangle:
+                self.dragrectangle = self.canvas.create_rectangle(self.canvas.bbox(self.obj))
+            self.canvas.itemconfigure(self.dragrectangle,dash=(3,), dashoffset=t)
+        else:
+            if self.dragrectangle:
+                self.canvas.delete(self.dragrectangle)
+                
+    def dialogupdate(self,response):
+        self.canvas.itemconfigure(self.obj,text=response.get("text",""))
+        self.font.size = response["size"]
+        self.mirror.itemconfigure(self.obj,text=response.get("text",""))
+        self.font.size = response["size"]*self.scale
+#    def lock(self):
+#        self.locked = True
+#        self.canvas.update()
+#        text = self.txtwidget.get('1.0','end')
+#        self.canvas.delete(self.obj)
+#        self.txtwidget.destroy()
+#        self.mfont.size = int(self.size*self.scale)
+#        prams = {
+#            "text": text,
+#            "anchor": tk.NW,
+#            "font": self.font,
+#            self.color_target: self.color
+#            }
+#        self.canvas.create_text(*self.ul, prams)
+#        self.mirror.create_text(*self.ul, prams)
+#        self.scale_mirror()
+#        
+#        #FIX: change font size?
+#        palette.palette["type"].select(palette.palette["type"].last)
+#    
+#    def hide(self):
+#        self.canvas.moveto(self.obj,*limbo)
+#        self.mirror.moveto(self.obj,*limbo)
+#    def update(self):
+#        if not self.locked and not self.txtwidget:
+#            self.canvas.coords(self.obj, *(self.ul+self.lr))
+#        else:
+#            self.canvas.moveto(self.obj,self.ul.x,self.ul.y)
+#            self.mirror.moveto(self.obj,self.ul.x,self.ul.y)
+#            self.scale_mirror()
+#            self.mfont.size = int(self.size*self.scale)
+#            #FIX: change font size?
+#        self.canvas.delete(self.obj)
+#        self.obj = self.canvas.create_window(self.ul.x-5,self.ul.y-5,anchor=tk.NW, window=self.txtwidget, width=width, height=height)
+#        self.canvas.focus(self.obj)
+#        self.txtwidget.bind("<FocusOut>", lambda e:self.lock())
+#        self.txtwidget.focus()
 #============================================================
 class Select(Element):
     def __init__(self,parent,root=None):
@@ -631,6 +660,7 @@ class Page:
         else:
             return None
     def startMouse(self, e):
+        print(f"\n{self.selectQ()=}========================================\n")
         if self.chosen:
             self.chosen.highlight(False)
         self.chosen = None
@@ -644,7 +674,7 @@ class Page:
                 self.chosen = el
                 if self.chosen:
                     self.chosen.highlight(True)
-                    self.dragStart = Point(e.x,e.y)
+
 
         else:
             self.parent.focus()
@@ -667,7 +697,7 @@ class Page:
 #        if isinstance(last,Curve): #ALT: all these objects have .add and .done so I don't need to check
 #            last.add(e.x,e.y)
     def doneMouse(self, e):
-        if self.selectQ() and self.chosen:
+        if self.selectQ() and self.chosen and self.dragStart:
             moved = Point(e.x,e.y)-self.dragStart
             self.chosen.drag(moved)
             self.chosen.ul += moved
