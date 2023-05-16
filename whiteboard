@@ -23,13 +23,15 @@ class Point:
     y = 0
     def __init__(self,x,y):
         self.x,self.y =x,y
+    def __iter__(self):
+        return iter([self.x,self.y])
     def __add__(self,other):
         return Point(self.x+other.x,self.y+other.y)
     def __sub__(self,other):
         return Point(self.x-other.x,self.y-other.y)
     def list(self):
         return [self.x,self.y]
-    def __str__(self,other):
+    def __repr__(self):
         return str((self.x,self.y))
 
 class Selection:
@@ -344,6 +346,8 @@ class Drawn(Element):
             selection.select(self)
         else:
             selection.stop()
+    def drag(self,point):
+        self.canvas.moveto(self.obj, *(point+self.ul))
     def d_update(self,points):
         self.canvas.coords(self.obj, *points)
         self.mirror.coords(self.obj, *points)
@@ -500,8 +504,8 @@ class Text(Shape):
             "font": self.font,
             self.color_target: self.color
             }
-        self.canvas.create_text(*self.ul.list(), prams)
-        self.mirror.create_text(*self.ul.list(), prams)
+        self.canvas.create_text(*self.ul, prams)
+        self.mirror.create_text(*self.ul, prams)
         self.scale_mirror()
         
         #FIX: change font size?
@@ -512,7 +516,7 @@ class Text(Shape):
         self.mirror.moveto(self.obj,*limbo)
     def update(self):
         if not self.locked and not self.txtwidget:
-            self.canvas.coords(self.obj, *(self.ul.list()+self.lr.list()))
+            self.canvas.coords(self.obj, *(self.ul+self.lr))
         else:
             self.canvas.moveto(self.obj,self.ul.x,self.ul.y)
             self.mirror.moveto(self.obj,self.ul.x,self.ul.y)
@@ -640,14 +644,20 @@ class Page:
                 self.chosen = el
                 if self.chosen:
                     self.chosen.highlight(True)
+                    self.dragStart = Point(e.x,e.y)
+
         else:
             self.parent.focus()
             pages.select(self.page)
             self.elements += [get("type")(self, e.x, e.y)]
     def dragMouse(self, e, shift=False):
         if self.selectQ():
-            if self.chosen:
-                pass
+            if self.chosen and self.dragStart:
+                moved = Point(e.x,e.y)-self.dragStart
+                #This is how much the mouse has moved
+                self.chosen.drag(moved)
+                """move the selected object"""
+             
         else:
             self.chosen = None
             if not self.elements: return
@@ -657,12 +667,15 @@ class Page:
 #        if isinstance(last,Curve): #ALT: all these objects have .add and .done so I don't need to check
 #            last.add(e.x,e.y)
     def doneMouse(self, e):
-        if self.selectQ():
-            pass
+        if self.selectQ() and self.chosen:
+            moved = Point(e.x,e.y)-self.dragStart
+            self.chosen.drag(moved)
+            self.chosen.ul += moved
         else:
             self.chosen=None
             if not (last:= self.selected()): return
             if last: last.done()
+        self.dragStart = None
     def straighten(self, e):
         """might work for other shapes too"""
         if isinstance(self.elements[-1], Curve):
